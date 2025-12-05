@@ -91,48 +91,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 設定 (安全連線版) ---
-# 【關鍵修正】不再將 Key 寫死在程式碼中，而是從 secrets 讀取
+# --- 2. 設定 ---
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-    else:
-        # 本地測試用 (如果在自己電腦跑，會跳出警告但可手動輸入)
-        st.warning("⚠️ 未偵測到雲端金鑰，請在 .streamlit/secrets.toml 設定或下方輸入")
-        GOOGLE_API_KEY = st.text_input("請輸入 Google API Key", type="password")
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    GOOGLE_API_KEY = ""
+    GOOGLE_API_KEY = "AIzaSyAeujsf3MEgvPa9XRumTvK2U0EDtLSbWfs"
 
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
+genai.configure(api_key=GOOGLE_API_KEY)
+generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
+model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config=generation_config)
+DB_FILE = 'stock_data_v71.csv'
 
-# 定義嚴格結構
-class DailyRecord(typing.TypedDict):
-    date: str
-    wind: str
-    part_time_count: int
-    worker_strong_count: int
-    worker_trend_count: int
-    worker_strong_stocks: list[str] 
-    worker_trend_stocks: list[str]
-    boss_pullback_stocks: list[str]
-    boss_bargain_stocks: list[str]
-    top_revenue_stocks: list[str]
-
-generation_config = {
-    "temperature": 0.0,
-    "response_mime_type": "application/json",
-    "response_schema": list[DailyRecord],
-}
-
-# 若有 Key 才初始化模型
-if GOOGLE_API_KEY:
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash", 
-        generation_config=generation_config,
-    )
-
-DB_FILE = 'stock_data_v75.csv'
 
 # --- 3. 核心函數 ---
 def load_db():
@@ -443,4 +412,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
