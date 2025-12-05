@@ -9,66 +9,87 @@ import time
 from datetime import datetime
 import altair as alt
 
-# --- 1. 頁面與 CSS (V71: 架構重構 + 視覺優化) ---
-st.set_page_config(layout="wide", page_title="StockTrack V71 系統完整版", page_icon="🚀")
+# --- 1. 頁面與 CSS (V72: 平衡版面 + 權限控管) ---
+st.set_page_config(layout="wide", page_title="StockTrack V72 權限控管版", page_icon="🔒")
 
 st.markdown("""
 <style>
-    /* 強制白底黑字 */
-    .stApp { background-color: #FFFFFF !important; color: #333333 !important; font-family: 'Helvetica', 'Arial', sans-serif; }
+    /* 1. 強制全域白底黑字 */
+    .stApp {
+        background-color: #FFFFFF !important;
+        color: #333333 !important;
+        font-family: 'Helvetica', 'Arial', sans-serif;
+    }
     
-    /* 標題與文字顏色 */
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li { color: #333333 !important; }
+    /* 2. 標題與文字顏色 */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li {
+        color: #333333 !important;
+    }
 
-    /* 頂部標題區 */
+    /* 3. 頂部標題區 (稍微縮小) */
     .title-box {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        padding: 30px; border-radius: 15px; margin-bottom: 25px; text-align: center;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        padding: 20px; border-radius: 12px; margin-bottom: 20px; text-align: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
-    .title-box h1 { color: #FFFFFF !important; font-size: 40px !important; }
-    .title-box p { color: #EEEEEE !important; font-size: 20px !important; }
+    .title-box h1 { color: #FFFFFF !important; font-size: 32px !important; margin-bottom: 10px !important;}
+    .title-box p { color: #EEEEEE !important; font-size: 16px !important; }
 
-    /* 數據卡片 */
+    /* 4. 數據卡片 (調整為適中大小) */
     div.metric-container {
-        background-color: #FFFFFF !important; border-radius: 12px; padding: 25px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center;
-        border: 1px solid #E0E0E0; border-top: 6px solid #3498db;
+        background-color: #FFFFFF !important; 
+        border-radius: 10px; 
+        padding: 20px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+        text-align: center;
+        border: 1px solid #E0E0E0; 
+        border-top: 5px solid #3498db;
     }
-    .metric-value { font-size: 3.5rem !important; font-weight: 800; color: #2c3e50 !important; }
-    .metric-label { font-size: 1.6rem !important; color: #555555 !important; font-weight: 700; }
+    .metric-value { font-size: 2.5rem !important; font-weight: 800; color: #2c3e50 !important; }
+    .metric-label { font-size: 1.1rem !important; color: #555555 !important; font-weight: 700; }
 
-    /* 策略橫幅 */
+    /* 5. 策略橫幅 (調整為適中大小) */
     .strategy-banner {
-        padding: 15px 25px; border-radius: 8px; font-size: 2rem; font-weight: 800;
-        margin-top: 35px; margin-bottom: 20px; display: flex; align-items: center;
-        box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        padding: 12px 20px; border-radius: 8px; font-size: 1.5rem; font-weight: 800;
+        margin-top: 30px; margin-bottom: 15px; display: flex; align-items: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     }
-    .strategy-banner p { color: white !important; font-size: 24px !important; }
+    .strategy-banner p { color: white !important; font-size: 20px !important; margin: 0 !important; }
     .worker-banner { background: linear-gradient(90deg, #2980b9, #3498db); }
     .boss-banner { background: linear-gradient(90deg, #c0392b, #e74c3c); }
     .revenue-banner { background: linear-gradient(90deg, #d35400, #e67e22); }
 
-    /* 股票標籤 */
+    /* 6. 股票標籤 (調整為適中大小) */
     .stock-tag {
         display: inline-block; background-color: #FFFFFF; color: #2c3e50 !important;
-        border: 3px solid #bdc3c7; padding: 12px 24px; margin: 10px;
-        border-radius: 10px; font-weight: 800; font-size: 1.8rem;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border: 2px solid #bdc3c7; padding: 8px 16px; margin: 6px;
+        border-radius: 6px; font-weight: 700; font-size: 1.2rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .stock-tag-cb { background-color: #fff8e1; border-color: #f1c40f; color: #d35400 !important; }
-    .cb-badge { background-color: #e67e22; color: #FFFFFF !important; font-size: 0.7em; padding: 3px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; }
+    .cb-badge { background-color: #e67e22; color: #FFFFFF !important; font-size: 0.6em; padding: 2px 5px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
     
-    /* 表格與編輯器優化 */
+    /* 7. 表格優化 (回歸正常閱讀大小) */
     .stDataFrame table { text-align: center !important; }
-    .stDataFrame th { font-size: 22px !important; color: #000000 !important; background-color: #E6E9EF !important; text-align: center !important; font-weight: 900 !important; }
-    .stDataFrame td { font-size: 20px !important; color: #333333 !important; background-color: #FFFFFF !important; text-align: center !important; }
+    .stDataFrame th {
+        font-size: 18px !important; color: #000000 !important;
+        background-color: #E6E9EF !important; 
+        text-align: center !important; font-weight: 700 !important;
+    }
+    .stDataFrame td {
+        font-size: 16px !important; color: #333333 !important;
+        background-color: #FFFFFF !important; text-align: center !important;
+    }
 
-    /* 分頁標籤 */
-    button[data-baseweb="tab"] { background-color: #FFFFFF !important; border: 1px solid #ddd !important; }
-    button[data-baseweb="tab"] div p { color: #333333 !important; font-size: 20px !important; font-weight: 800 !important; }
+    /* 8. 分頁標籤 */
+    button[data-baseweb="tab"] { background-color: #FFFFFF !important; border: 1px solid #ddd !important; padding: 5px 15px !important;}
+    button[data-baseweb="tab"] div p { color: #333333 !important; font-size: 18px !important; font-weight: 700 !important; }
     button[data-baseweb="tab"][aria-selected="true"] { background-color: #e3f2fd !important; border-bottom: 4px solid #3498db !important; }
     
+    /* 9. 下拉選單 */
+    [data-testid="stSelectbox"] label { font-size: 16px !important; color: #333333 !important; font-weight: bold !important; }
+    [data-baseweb="select"] div { font-size: 16px !important; color: #333333 !important; background-color: #FFFFFF !important; }
+
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -82,7 +103,7 @@ except:
 genai.configure(api_key=GOOGLE_API_KEY)
 generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
 model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config=generation_config)
-DB_FILE = 'stock_data_v71.csv'
+DB_FILE = 'stock_data_v72.csv'
 
 # --- 3. 核心函數 ---
 def load_db():
@@ -95,14 +116,14 @@ def load_db():
         except: return pd.DataFrame()
     return pd.DataFrame()
 
-def save_full_db(df):
-    """儲存完整的資料庫 (用於歷史編輯)"""
-    df = df.sort_values('date', ascending=False)
-    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-
 def save_batch_data(records_list):
     df = load_db()
-    new_data = pd.DataFrame(records_list)
+    # 處理輸入可能是 list 或 DataFrame
+    if isinstance(records_list, list):
+        new_data = pd.DataFrame(records_list)
+    else:
+        new_data = records_list
+
     if not df.empty:
         new_data['date'] = new_data['date'].astype(str)
         df = df[~df['date'].isin(new_data['date'])]
@@ -115,12 +136,12 @@ def save_batch_data(records_list):
 def clear_db():
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
 
+# 維持最準確的 V50 邏輯 (數字錨點)
 def ai_analyze_v50_grid(image):
-    # V50 邏輯
     prompt = """
     你是一個精準的表格座標讀取器。請將圖片視為一個 **23 欄位 (Col 1 ~ Col 23)** 的矩陣。
     表格標題列下方有明確的數字編號 (1, 2, 3)，請依此進行絕對定位。
-    【欄位定義】
+    【欄位定義 (Index 1-23)】
     1. `date` | 2. `wind` | 3. `count1` | 4. `count2` | 5. `count3`
     --- 黃色區塊 ---
     6. `strong_1` (1) | 7. `strong_2` (2) | 8. `strong_3` (3)
@@ -189,16 +210,17 @@ def render_stock_tags(stock_str):
 def show_dashboard():
     df = load_db()
     if df.empty:
-        st.info("👋 資料庫目前為空。請切換至「資料管理後台」上傳圖片。")
+        st.info("👋 資料庫為空，目前無資料可顯示。")
         return
 
     all_dates = df['date'].unique()
     st.sidebar.divider(); st.sidebar.header("📅 歷史回顧")
     selected_date = st.sidebar.selectbox("選擇日期", options=all_dates, index=0)
     day_df = df[df['date'] == selected_date]
+    if day_df.empty: st.error("資料讀取錯誤"); return
     day_data = day_df.iloc[0]
 
-    st.markdown(f"""<div class="title-box"><h1 style='margin:0; font-size: 2.8rem;'>📅 {selected_date} 市場戰情室</h1><p style='margin-top:10px; opacity:0.9;'>資料更新於: {day_data['last_updated']}</p></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="title-box"><h1 style='margin:0; font-size: 2rem;'>📅 {selected_date} 市場戰情室</h1><p style='margin-top:10px; opacity:0.9;'>資料更新於: {day_data['last_updated']}</p></div>""", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     wind_status = day_data['wind']; wind_color = "#2ecc71"
@@ -230,9 +252,9 @@ def show_dashboard():
 
     tab1, tab2, tab3 = st.tabs(["📈 風箏數量 (分組柱狀圖)", "🌬️ 每日風度分佈", "📅 月度風度統計 (分組柱狀圖)"])
     
-    # 【關鍵修正】圖表文字強制黑色 + 白底 + Grid=True
-    axis_config = alt.Axis(labelFontSize=18, titleFontSize=22, labelColor='#000000', titleColor='#000000', labelFontWeight='bold', grid=True, gridColor='#E0E0E0')
-    legend_config = alt.Legend(orient='top', labelFontSize=18, titleFontSize=22, labelColor='#000000', titleColor='#000000')
+    # 維持 V68 的圖表設定 (字體黑、大、有格線)
+    axis_config = alt.Axis(labelFontSize=16, titleFontSize=18, labelColor='#333333', titleColor='#333333', labelFontWeight='bold', grid=True, gridColor='#E0E0E0')
+    legend_config = alt.Legend(orient='top', labelFontSize=16, titleFontSize=18, labelColor='#333333', titleColor='#333333')
 
     with tab1:
         melted_df = chart_df.melt(id_vars=['date'], value_vars=['part_time_count', 'worker_strong_count', 'worker_trend_count'], var_name='category', value_name='count')
@@ -289,15 +311,14 @@ def show_dashboard():
                     st.subheader(f"{strategy}")
                     st.dataframe(strat_data[['stock', 'Count']], hide_index=True, use_container_width=True,
                                  column_config={"stock": "股票名稱", "Count": st.column_config.ProgressColumn("出現次數", format="%d次", min_value=0, max_value=int(strat_data['Count'].max()) if not strat_data.empty else 1)})
-    else: st.info("累積足夠資料後，將在此顯示統計排行。")
+    else: st.info("目前無統計數據。")
 
 def show_admin_panel():
     st.title("⚙️ 資料管理後台")
     
-    # 區塊 1: 新增資料
-    st.subheader("📥 新增每日資料")
-    uploaded_file = st.file_uploader("上傳截圖進行 AI 解析", type=["png", "jpg", "jpeg"])
-    
+    # 上傳與解析
+    st.subheader("📥 新增/更新資料")
+    uploaded_file = st.file_uploader("上傳截圖", type=["png", "jpg", "jpeg"])
     if 'preview_df' not in st.session_state: st.session_state.preview_df = None
     
     if uploaded_file and st.button("開始解析", type="primary"):
@@ -334,49 +355,70 @@ def show_admin_panel():
                         }
                         processed_list.append(record)
                     st.session_state.preview_df = pd.DataFrame(processed_list)
-                    st.success("解析完成，請在下方檢查並存檔。")
+                    st.success("解析完成！請在下方預覽並確認。")
             except Exception as e: st.error(f"錯誤: {e}")
 
+    # 預覽與編輯
     if st.session_state.preview_df is not None:
-        st.info("👇 這是 AI 抓到的資料，您可以直接修改，確認無誤後請按「存入資料庫」。")
+        st.info("👇 請確認下方資料，可直接點擊修改，無誤後按「存入資料庫」。")
         edited_new = st.data_editor(st.session_state.preview_df, num_rows="dynamic", use_container_width=True, key="new_editor")
-        if st.button("✅ 確認無誤，存入資料庫"):
+        if st.button("✅ 存入資料庫"):
             save_batch_data(edited_new)
-            st.success("新增成功！")
+            st.success("已存檔！")
             st.session_state.preview_df = None
             time.sleep(1)
             st.rerun()
 
     st.divider()
     
-    # 區塊 2: 修改歷史資料
-    st.subheader("📝 修改歷史資料庫")
+    # 歷史編輯
+    st.subheader("📝 歷史資料庫編輯")
     df = load_db()
     if not df.empty:
-        st.markdown("您可以直接在這裡修改過去任何一天的資料，修改完畢後系統會自動儲存。")
+        st.markdown("在此可修改所有歷史紀錄：")
         edited_history = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="history_editor")
-        
-        if st.button("💾 儲存歷史修改"):
-            save_full_db(edited_history)
+        if st.button("💾 儲存變更"):
+            save_batch_data(edited_history) # 重用 batch save 邏輯 (它會覆蓋)
             st.success("歷史資料已更新！")
             time.sleep(1)
             st.rerun()
-            
-        if st.button("🗑️ 清空所有資料 (慎用)"):
+        
+        if st.button("🗑️ 清空資料庫 (慎用)"):
             clear_db()
-            st.warning("資料庫已清空")
+            st.warning("已清空")
             st.rerun()
-    else:
-        st.info("目前沒有歷史資料。")
 
-# --- 7. 導航 ---
+# --- 7. 導航邏輯 ---
 def main():
     st.sidebar.title("導航")
-    page = st.sidebar.radio("前往", ["📊 戰情儀表板", "⚙️ 資料管理後台"])
+    
+    # 密碼保護邏輯
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+
+    # 預設選項
+    options = ["📊 戰情儀表板"]
+    
+    # 密碼輸入框 (如果還沒登入)
+    if not st.session_state.is_admin:
+        pwd = st.sidebar.text_input("🔐 管理員密碼", type="password")
+        if pwd == "8899abc168": # 您可以自行修改密碼
+            st.session_state.is_admin = True
+            st.sidebar.success("已解鎖")
+            st.rerun()
+    
+    # 如果已登入，顯示後台選項
+    if st.session_state.is_admin:
+        options.append("⚙️ 資料管理後台")
+        if st.sidebar.button("登出"):
+            st.session_state.is_admin = False
+            st.rerun()
+
+    page = st.sidebar.radio("前往", options)
     
     if page == "📊 戰情儀表板":
         show_dashboard()
-    else:
+    elif page == "⚙️ 資料管理後台":
         show_admin_panel()
 
 if __name__ == "__main__":
