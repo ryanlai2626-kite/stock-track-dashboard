@@ -8,6 +8,13 @@ import json
 import time
 from datetime import datetime
 import altair as alt
+import shutil
+
+# 修正 Pydantic 錯誤
+try:
+    from typing_extensions import TypedDict
+except ImportError:
+    from typing import TypedDict
 
 # --- 1. 頁面與 CSS (V74: 導航回歸 + 標題白字修復) ---
 st.set_page_config(layout="wide", page_title="StockTrack V74 完整修復版", page_icon="🛠️")
@@ -491,4 +498,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
