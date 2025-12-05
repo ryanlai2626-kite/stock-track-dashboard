@@ -16,7 +16,7 @@ st.markdown("""
 <style>
     /* 1. 強制全域白底黑字 */
     .stApp {
-        background-color: #FFFFFF !important;
+        background-color: #F4F6F9 !important;
         color: #333333 !important;
         font-family: 'Helvetica', 'Arial', sans-serif;
     }
@@ -423,3 +423,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
