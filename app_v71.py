@@ -93,21 +93,65 @@ st.markdown("""
 
 # --- 2. 設定 ---
 try:
-    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    if "GOOGLE_API_KEY" in st.secrets:
+        GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    else:
+        GOOGLE_API_KEY = "您的_API_KEY_貼在這裡" 
 except:
-    GOOGLE_API_KEY = "AIzaSyAeujsf3MEgvPa9XRumTvK2U0EDtLSbWfs"
+    GOOGLE_API_KEY = ""
 
-genai.configure(api_key=GOOGLE_API_KEY)
-generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
-model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config=generation_config)
-DB_FILE = 'stock_data_v71.csv'
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
 
+class DailyRecord(TypedDict):
+    col_01: str
+    col_02: str
+    col_03: int
+    col_04: int
+    col_05: int
+    col_06: str
+    col_07: str
+    col_08: str
+    col_09: str
+    col_10: str
+    col_11: str
+    col_12: str
+    col_13: str
+    col_14: str
+    col_15: str
+    col_16: str
+    col_17: str
+    col_18: str
+    col_19: str
+    col_20: str
+    col_21: str
+    col_22: str
+    col_23: str
+
+generation_config = {
+    "temperature": 0.0,
+    "response_mime_type": "application/json",
+    "response_schema": list[DailyRecord],
+}
+
+if GOOGLE_API_KEY:
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash", 
+        generation_config=generation_config,
+    )
+
+DB_FILE = 'stock_data_v87.csv'
+BACKUP_FILE = 'stock_data_backup.csv'
 
 # --- 3. 核心函數 ---
 def load_db():
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_csv(DB_FILE, encoding='utf-8-sig')
+            numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             if 'date' in df.columns:
                 df['date'] = df['date'].astype(str)
                 return df.sort_values('date', ascending=False)
@@ -116,45 +160,71 @@ def load_db():
 
 def save_batch_data(records_list):
     df = load_db()
-    # 處理輸入型別 (List 或 DataFrame)
+    if os.path.exists(DB_FILE):
+        try: shutil.copy(DB_FILE, BACKUP_FILE)
+        except: pass
+
     if isinstance(records_list, list):
         new_data = pd.DataFrame(records_list)
     else:
         new_data = records_list
 
-    if not df.empty:
+    if not new_data.empty:
         new_data['date'] = new_data['date'].astype(str)
-        df = df[~df['date'].isin(new_data['date'])]
-        df = pd.concat([df, new_data], ignore_index=True)
-    else: df = new_data
+        if not df.empty:
+            df = df[~df['date'].isin(new_data['date'])]
+            df = pd.concat([df, new_data], ignore_index=True)
+        else:
+            df = new_data
+
     df = df.sort_values('date', ascending=False)
     df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
     return df
 
+def save_full_history(df_to_save):
+    if not df_to_save.empty:
+        df_to_save['date'] = df_to_save['date'].astype(str)
+        df_to_save = df_to_save.sort_values('date', ascending=False)
+        df_to_save.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+
 def clear_db():
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
 
-# V50 邏輯：最準確的數字錨點
-def ai_analyze_v50_grid(image):
+def ai_analyze_v86(image):
     prompt = """
-    你是一個精準的表格座標讀取器。請將圖片視為一個 **23 欄位 (Col 1 ~ Col 23)** 的矩陣。
-    表格標題列下方有明確的數字編號 (1, 2, 3)，請依此進行絕對定位。
-    【欄位定義 (Index 1-23)】
-    1. `date` | 2. `wind` | 3. `count1` | 4. `count2` | 5. `count3`
+    你是一個精準的表格座標讀取器。請分析圖片中的每一行，回傳 JSON Array。
+    【核心策略：利用標題下方的數字 1, 2, 3 進行對齊】
+    表格標題列下方有明確的數字編號，請務必對齊這些編號來讀取資料，絕對不要錯位。
+    【欄位對應表】
+    1. `col_01`: 日期
+    2. `col_02`: 風度
+    3. `col_03`: 打工數
+    4. `col_04`: 強勢週數
+    5. `col_05`: 週趨勢數
     --- 黃色區塊 ---
-    6. `strong_1` (1) | 7. `strong_2` (2) | 8. `strong_3` (3)
-    9. `trend_1` (1) | 10. `trend_2` (2) | 11. `trend_3` (3)
+    6. `col_06`: 強勢週 (對應數字 1)
+    7. `col_07`: 強勢週 (對應數字 2)
+    8. `col_08`: 強勢週 (對應數字 3)
+    9. `col_09`: 週趨勢 (對應數字 1)
+    10. `col_10`: 週趨勢 (對應數字 2)
+    11. `col_11`: 週趨勢 (對應數字 3)
     --- 藍色區塊 ---
-    12. `pullback_1` (1) | 13. `pullback_2` (2) | 14. `pullback_3` (3)
-    15. `bargain_1` (1) | 16. `bargain_2` (2) | 17. `bargain_3` (3)
+    12. `col_12`: 週拉回 (對應數字 1)
+    13. `col_13`: 週拉回 (對應數字 2)
+    14. `col_14`: 週拉回 (對應數字 3)
+    15. `col_15`: 廉價收購 (對應數字 1)
+    16. `col_16`: 廉價收購 (對應數字 2)
+    17. `col_17`: 廉價收購 (對應數字 3)
     --- 灰色區塊 ---
-    18. `rev_1` ~ 23. `rev_6`
+    18. `col_18` ~ 23. `col_23`: 營收創高 Top 6
     【重要校正：12/02 & 12/04】
     - 12/02 週拉回: 只有宜鼎、宇瞻。Col 14 是 null。
     - 12/02 廉價收購: 群聯、高力、宜鼎 (對齊 1,2,3)。
     - 12/04 強勢週: 只有勤凱 (Col 6)。
     - 12/04 週趨勢: 只有雍智科技 (Col 9)。
-    【標記】橘色背景請加 `(CB)`。
+    【標記】
+    - 橘色背景請加 `(CB)`。
+    - 格子為空請填 null。
     請回傳 JSON Array。
     """
     try:
@@ -314,7 +384,8 @@ def show_dashboard():
 # --- 6. 頁面視圖：管理後台 (後台) ---
 def show_admin_panel():
     st.title("⚙️ 資料管理後台")
-    
+    if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
+
     st.subheader("📥 新增/更新資料")
     uploaded_file = st.file_uploader("上傳截圖", type=["png", "jpg", "jpeg"])
     if 'preview_df' not in st.session_state: st.session_state.preview_df = None
@@ -323,7 +394,7 @@ def show_admin_panel():
         with st.spinner("AI 解析中..."):
             img = Image.open(uploaded_file)
             try:
-                json_text = ai_analyze_v50_grid(img)
+                json_text = ai_analyze_v86(img)
                 if "error" in json_text and len(json_text) < 100: st.error(f"API 錯誤: {json_text}")
                 else:
                     raw_data = json.loads(json_text)
@@ -332,23 +403,38 @@ def show_admin_panel():
                         def merge_keys(prefix, count):
                             res = []; seen = set()
                             for i in range(1, count + 1):
-                                val = item.get(f"{prefix}_{i}")
+                                val = item.get(f"col_{5 + i + (3 if prefix=='trend' else 0) + (6 if prefix=='pullback' else 0) + (9 if prefix=='bargain' else 0) + (12 if prefix=='rev' else 0):02d}")
                                 if val and str(val).lower() != 'null':
                                     val_str = str(val).strip()
                                     if val_str not in seen: res.append(val_str); seen.add(val_str)
                             return "、".join(res)
-                        if not item.get("date"): continue
+                        
+                        # 這裡的映射邏輯較複雜，V86 已經使用更直觀的 col_XX，這裡直接硬對應
+                        # Col 01~05
+                        if not item.get("col_01"): continue
+                        
+                        # 輔助取值
+                        def get_col_stocks(start, end):
+                            res = []; seen = set()
+                            for i in range(start, end + 1):
+                                val = item.get(f"col_{i:02d}")
+                                if val and str(val).lower() != 'null':
+                                    val_str = str(val).strip()
+                                    if val_str not in seen: res.append(val_str); seen.add(val_str)
+                            return "、".join(res)
+
                         record = {
-                            "date": str(item.get("date")).replace("/", "-"),
-                            "wind": item.get("wind", ""),
-                            "part_time_count": item.get("count1", 0),
-                            "worker_strong_count": item.get("count2", 0),
-                            "worker_trend_count": item.get("count3", 0),
-                            "worker_strong_list": merge_keys("strong", 3),
-                            "worker_trend_list": merge_keys("trend", 3),
-                            "boss_pullback_list": merge_keys("pullback", 3),
-                            "boss_bargain_list": merge_keys("bargain", 3),
-                            "top_revenue_list": merge_keys("rev", 6),
+                            "date": str(item.get("col_01")).replace("/", "-"),
+                            "wind": item.get("col_02", ""),
+                            "part_time_count": item.get("col_03", 0),
+                            "worker_strong_count": item.get("col_04", 0),
+                            "worker_trend_count": item.get("col_05", 0),
+                            
+                            "worker_strong_list": get_col_stocks(6, 8),
+                            "worker_trend_list": get_col_stocks(9, 11),
+                            "boss_pullback_list": get_col_stocks(12, 14),
+                            "boss_bargain_list": get_col_stocks(15, 17),
+                            "top_revenue_list": get_col_stocks(18, 23),
                             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
                         processed_list.append(record)
@@ -369,18 +455,11 @@ def show_admin_panel():
     st.subheader("📝 歷史資料庫編輯")
     df = load_db()
     if not df.empty:
-        st.markdown("在此可修改所有歷史紀錄：")
         edited_history = st.data_editor(df, num_rows="dynamic", use_container_width=True)
         if st.button("💾 儲存變更"):
-            save_batch_data(edited_history)
-            st.success("歷史資料已更新！")
-            time.sleep(1)
-            st.rerun()
-        
-        if st.button("🗑️ 清空資料庫 (慎用)"):
-            clear_db()
-            st.warning("已清空")
-            st.rerun()
+            save_full_history(edited_history)
+            st.success("更新成功！"); time.sleep(1); st.rerun()
+        if st.button("🗑️ 清空資料庫"): clear_db(); st.warning("已清空"); st.rerun()
 
 # --- 7. 主導航 ---
 def main():
@@ -412,5 +491,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
