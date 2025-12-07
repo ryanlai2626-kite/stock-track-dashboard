@@ -23,7 +23,7 @@ st.markdown("""
 <style>
     /* 1. 全域背景 (淺灰藍) 與深色文字 */
     .stApp {
-        background-color: #F4F6F9 !important;
+        background-color: #2c3e50 !important;
         color: #333333 !important;
         font-family: 'Helvetica', 'Arial', sans-serif;
     }
@@ -171,7 +171,7 @@ try:
     if "GOOGLE_API_KEY" in st.secrets:
         GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     else:
-        GOOGLE_API_KEY = "AIzaSyCNYk70ekW1Zz4PQaGWhIZtupbxhB7VHhQ" 
+        GOOGLE_API_KEY = "請輸入你的API KEY" 
 except:
     GOOGLE_API_KEY = ""
 
@@ -635,4 +635,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
