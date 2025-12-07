@@ -16,15 +16,15 @@ try:
 except ImportError:
     from typing import TypedDict
 
-# --- 1. 頁面與 CSS (V76: 下拉選單美化 + 響應式高度 + 導航) ---
-st.set_page_config(layout="wide", page_title="StockTrack V76+DarkMenu", page_icon="🛠️")
+# --- 1. 頁面與 CSS (V77: 下拉選單字體顏色終極修正) ---
+st.set_page_config(layout="wide", page_title="StockTrack V77+MenuFix", page_icon="🛠️")
 
 st.markdown("""
 <style>
     /* 1. 全域背景 (淺灰藍) 與深色文字 */
     .stApp {
         background-color: #F4F6F9 !important;
-        color: #FFFFFF !important;
+        color: #333333 !important;
         font-family: 'Helvetica', 'Arial', sans-serif;
     }
     
@@ -110,48 +110,56 @@ st.markdown("""
     button[data-baseweb="tab"] div p { color: #333333 !important; font-size: 20px !important; font-weight: 800 !important; }
     button[data-baseweb="tab"][aria-selected="true"] { background-color: #e3f2fd !important; border-bottom: 4px solid #3498db !important; }
     
-    /* --- 9. 下拉選單 (V76 優化：深底白字) --- */
+    /* --- 9. 下拉選單 (V77 終極修正：強制框內所有元素變白) --- */
     
-    /* 選單上方的標題文字 (例如 "選擇日期") */
-    [data-testid="stSelectbox"] label { 
-        font-size: 20px !important; 
-        color: #FFFFFF !important; /* 標題維持深色 */
-        font-weight: bold !important; 
+    /* 1. 選單上方的標題文字 (例如 "選擇日期")：維持深色 */
+    .stSelectbox label {
+        font-size: 20px !important;
+        color: #333333 !important;
+        font-weight: bold !important;
     }
 
-    /* 選單框框本體 (未展開時) */
-    div[data-baseweb="select"] > div {
-        background-color: #2c3e50 !important; /* 深藍灰色背景 */
-        color: #FFFFFF !important;             /* 白色文字 */
-        border: 1px solid #2c3e50 !important;
-        border-radius: 8px !important;
+    /* 2. 選單框框本體 (背景深藍色) */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #2c3e50 !important;
+        border-color: #2c3e50 !important;
+        color: white !important; /* 第一層設定白色 */
     }
-    
-    /* 強制選單內的文字顏色為白色 */
-    div[data-baseweb="select"] span {
+
+    /* 3. 【關鍵修正】強制框框內「所有」層級的文字變成白色 */
+    /* 這會覆蓋掉 Streamlit 預設的灰色 */
+    .stSelectbox div[data-baseweb="select"] > div * {
         color: #FFFFFF !important;
     }
 
-    /* 右側的小箭頭 SVG */
-    div[data-baseweb="select"] svg {
-        fill: #FFFFFF !important; /* 改成白色 */
+    /* 4. 右側箭頭 SVG 圖示強制變白 */
+    .stSelectbox div[data-baseweb="select"] svg {
+        fill: #FFFFFF !important;
+        color: #FFFFFF !important;
     }
 
-    /* 展開後的下拉列表容器 */
+    /* 5. 展開後的下拉列表清單 */
     ul[data-baseweb="menu"] {
-        background-color: #2c3e50 !important; /* 列表背景深色 */
+        background-color: #2c3e50 !important;
     }
-
-    /* 列表中的每一個選項 */
+    
+    /* 6. 列表中的選項文字 */
     li[role="option"] {
-        color: #FFFFFF !important; /* 選項文字白色 */
+        color: #FFFFFF !important;
     }
 
-    /* 滑鼠滑過選項的效果 */
+    /* 7. 滑鼠滑過選項的效果 */
     li[role="option"]:hover, li[role="option"][aria-selected="true"] {
-        background-color: #34495e !important; /* 稍微淺一點的藍 */
-        color: #f1c40f !important;             /* 字變亮黃色 */
-        font-weight: bold !important;
+        background-color: #34495e !important;
+        color: #f1c40f !important; /* 選中時變黃色 */
+    }
+    
+    /* 修正展開列表內的文字顏色 (雙重保險) */
+    li[role="option"] div {
+        color: #FFFFFF !important;
+    }
+    li[role="option"]:hover div {
+        color: #f1c40f !important;
     }
 
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
@@ -163,7 +171,7 @@ try:
     if "GOOGLE_API_KEY" in st.secrets:
         GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     else:
-        GOOGLE_API_KEY = "請輸入你的API KEY" 
+        GOOGLE_API_KEY = "AIzaSyCNYk70ekW1Zz4PQaGWhIZtupbxhB7VHhQ" 
 except:
     GOOGLE_API_KEY = ""
 
@@ -203,7 +211,7 @@ generation_config = {
 
 if GOOGLE_API_KEY:
     # 預設 gemini-1.5-flash，若有問題請用後台工具檢查
-    model_name_to_use = "gemini-2.0-flash"
+    model_name_to_use = "gemini-1.5-flash"
     model = genai.GenerativeModel(
         model_name=model_name_to_use,
         generation_config=generation_config,
@@ -627,6 +635,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
