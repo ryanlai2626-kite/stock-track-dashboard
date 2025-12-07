@@ -58,8 +58,8 @@ st.markdown("""
         height: 220px !important;
     }
 
-    .metric-value { font-size: 3.5rem !important; font-weight: 800; color: #2c3e50 !important; margin: 10px 0; }
-    .metric-label { font-size: 1.6rem !important; color: #555555 !important; font-weight: 700; }
+    .metric-value { font-size: 3.0rem !important; font-weight: 800; color: #2c3e50 !important; margin: 10px 0; }
+    .metric-label { font-size: 2.2rem !important; color: #555555 !important; font-weight: 700; }
     .metric-sub { font-size: 1.2rem !important; color: #888888 !important; font-weight: bold; margin-top: 5px; }
 
     /* 手機版優化 */
@@ -69,8 +69,8 @@ st.markdown("""
             min-height: 180px !important;
             padding: 10px !important;
         }
-        .metric-value { font-size: 2.5rem !important; }
-        .metric-label { font-size: 1.3rem !important; }
+        .metric-value { font-size: 2.2rem !important; }
+        .metric-label { font-size: 1.5rem !important; }
     }
 
     /* 5. 策略橫幅 */
@@ -635,3 +635,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
