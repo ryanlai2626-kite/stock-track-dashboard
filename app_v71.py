@@ -115,7 +115,7 @@ st.markdown("""
     /* 選單上方的標題文字 (例如 "選擇日期") */
     [data-testid="stSelectbox"] label { 
         font-size: 20px !important; 
-        color: #333333 !important; /* 標題維持深色 */
+        color: #FFFFFF !important; /* 標題維持深色 */
         font-weight: bold !important; 
     }
 
@@ -627,4 +627,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
