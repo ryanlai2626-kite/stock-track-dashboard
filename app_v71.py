@@ -24,7 +24,7 @@ st.markdown("""
     /* 1. 全域背景 (淺灰藍) 與深色文字 */
     .stApp {
         background-color: #F4F6F9 !important;
-        color: #333333 !important;
+        color: #FFFFFF !important;
         font-family: 'Helvetica', 'Arial', sans-serif;
     }
     
@@ -627,5 +627,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
