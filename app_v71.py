@@ -16,8 +16,8 @@ try:
 except ImportError:
     from typing import TypedDict
 
-# --- 1. 頁面與 CSS (V74: 導航回歸 + 標題白字修復) ---
-st.set_page_config(layout="wide", page_title="StockTrack V74 完整修復版", page_icon="🛠️")
+# --- 1. 頁面與 CSS (V76: 下拉選單美化 + 響應式高度 + 導航) ---
+st.set_page_config(layout="wide", page_title="StockTrack V76+DarkMenu", page_icon="🛠️")
 
 st.markdown("""
 <style>
@@ -42,23 +42,43 @@ st.markdown("""
     .title-box h1 { color: #FFFFFF !important; font-size: 40px !important; }
     .title-box p { color: #EEEEEE !important; font-size: 20px !important; }
 
-    /* 4. 數據卡片 */
+    /* --- 4. 數據卡片 (響應式設計) --- */
     div.metric-container {
         background-color: #FFFFFF !important; 
-        border-radius: 12px; padding: 25px;
+        border-radius: 12px; padding: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center;
         border: 1px solid #E0E0E0; border-top: 6px solid #3498db;
+        
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        
+        /* 電腦版預設高度 */
+        height: 220px !important;
     }
-    .metric-value { font-size: 3.5rem !important; font-weight: 800; color: #2c3e50 !important; }
-    .metric-label { font-size: 1.6rem !important; color: #555555 !important; font-weight: 700; }
 
-    /* 5. 策略橫幅 (容器) */
+    .metric-value { font-size: 3.5rem !important; font-weight: 800; color: #2c3e50 !important; margin: 10px 0; }
+    .metric-label { font-size: 1.6rem !important; color: #555555 !important; font-weight: 700; }
+    .metric-sub { font-size: 1.2rem !important; color: #888888 !important; font-weight: bold; margin-top: 5px; }
+
+    /* 手機版優化 */
+    @media (max-width: 900px) {
+        div.metric-container {
+            height: auto !important;
+            min-height: 180px !important;
+            padding: 10px !important;
+        }
+        .metric-value { font-size: 2.5rem !important; }
+        .metric-label { font-size: 1.3rem !important; }
+    }
+
+    /* 5. 策略橫幅 */
     .strategy-banner {
         padding: 15px 25px; border-radius: 8px; 
         margin-top: 35px; margin-bottom: 20px; display: flex; align-items: center;
         box-shadow: 0 3px 6px rgba(0,0,0,0.15);
     }
-    /* 【修正】策略橫幅內的文字：強制白色 */
     .banner-text {
         color: #FFFFFF !important;
         font-size: 24px !important;
@@ -90,9 +110,49 @@ st.markdown("""
     button[data-baseweb="tab"] div p { color: #333333 !important; font-size: 20px !important; font-weight: 800 !important; }
     button[data-baseweb="tab"][aria-selected="true"] { background-color: #e3f2fd !important; border-bottom: 4px solid #3498db !important; }
     
-    /* 9. 下拉選單 */
-    [data-testid="stSelectbox"] label { font-size: 20px !important; color: #333333 !important; font-weight: bold !important; }
-    [data-baseweb="select"] div { font-size: 18px !important; color: #333333 !important; background-color: #FFFFFF !important; }
+    /* --- 9. 下拉選單 (V76 優化：深底白字) --- */
+    
+    /* 選單上方的標題文字 (例如 "選擇日期") */
+    [data-testid="stSelectbox"] label { 
+        font-size: 20px !important; 
+        color: #333333 !important; /* 標題維持深色 */
+        font-weight: bold !important; 
+    }
+
+    /* 選單框框本體 (未展開時) */
+    div[data-baseweb="select"] > div {
+        background-color: #2c3e50 !important; /* 深藍灰色背景 */
+        color: #FFFFFF !important;             /* 白色文字 */
+        border: 1px solid #2c3e50 !important;
+        border-radius: 8px !important;
+    }
+    
+    /* 強制選單內的文字顏色為白色 */
+    div[data-baseweb="select"] span {
+        color: #FFFFFF !important;
+    }
+
+    /* 右側的小箭頭 SVG */
+    div[data-baseweb="select"] svg {
+        fill: #FFFFFF !important; /* 改成白色 */
+    }
+
+    /* 展開後的下拉列表容器 */
+    ul[data-baseweb="menu"] {
+        background-color: #2c3e50 !important; /* 列表背景深色 */
+    }
+
+    /* 列表中的每一個選項 */
+    li[role="option"] {
+        color: #FFFFFF !important; /* 選項文字白色 */
+    }
+
+    /* 滑鼠滑過選項的效果 */
+    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+        background-color: #34495e !important; /* 稍微淺一點的藍 */
+        color: #f1c40f !important;             /* 字變亮黃色 */
+        font-weight: bold !important;
+    }
 
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 </style>
@@ -103,7 +163,7 @@ try:
     if "GOOGLE_API_KEY" in st.secrets:
         GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     else:
-        GOOGLE_API_KEY = "您的_API_KEY_貼在這裡" 
+        GOOGLE_API_KEY = "AIzaSyCNYk70ekW1Zz4PQaGWhIZtupbxhB7VHhQ" 
 except:
     GOOGLE_API_KEY = ""
 
@@ -142,12 +202,14 @@ generation_config = {
 }
 
 if GOOGLE_API_KEY:
+    # 預設 gemini-1.5-flash，若有問題請用後台工具檢查
+    model_name_to_use = "gemini-1.5-flash"
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash", 
+        model_name=model_name_to_use,
         generation_config=generation_config,
     )
 
-DB_FILE = 'stock_data_v87.csv'
+DB_FILE = 'stock_data_v74.csv' # 維持您的檔名
 BACKUP_FILE = 'stock_data_backup.csv'
 
 # --- 3. 核心函數 ---
@@ -196,6 +258,28 @@ def save_full_history(df_to_save):
 
 def clear_db():
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
+
+# 【新增】計算風向持續天數
+def calculate_wind_streak(df, current_date_str):
+    if df.empty: return 0
+    
+    past_df = df[df['date'] <= current_date_str].copy()
+    if past_df.empty: return 0
+    
+    past_df = past_df.sort_values('date', ascending=False).reset_index(drop=True)
+    
+    def clean_wind(w): return str(w).replace("(CB)", "").strip()
+    
+    current_wind = clean_wind(past_df.iloc[0]['wind'])
+    streak = 1
+    
+    for i in range(1, len(past_df)):
+        prev_wind = clean_wind(past_df.iloc[i]['wind'])
+        if prev_wind == current_wind:
+            streak += 1
+        else:
+            break
+    return streak
 
 def ai_analyze_v86(image):
     prompt = """
@@ -267,8 +351,15 @@ def calculate_monthly_stats(df):
     final_df = final_df.sort_values(['Month', 'Strategy', 'Count'], ascending=[False, True, False])
     return final_df
 
-def render_metric_card(col, label, value, color_border="gray"):
-    col.markdown(f"""<div class="metric-container" style="border-top: 5px solid {color_border};"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>""", unsafe_allow_html=True)
+def render_metric_card(col, label, value, color_border="gray", sub_value=""):
+    sub_html = f'<div class="metric-sub">{sub_value}</div>' if sub_value else ""
+    col.markdown(f"""
+    <div class="metric-container" style="border-top: 5px solid {color_border};">
+        <div class="metric-label">{label}</div>
+        <div class="metric-value">{value}</div>
+        {sub_html}
+    </div>
+    """, unsafe_allow_html=True)
 
 def render_stock_tags(stock_str):
     if pd.isna(stock_str) or not stock_str: return "<span style='color:#bdc3c7; font-size:1.2rem; font-weight:600;'>（無標的）</span>"
@@ -298,15 +389,20 @@ def show_dashboard():
 
     c1, c2, c3, c4 = st.columns(4)
     wind_status = day_data['wind']; wind_color = "#2ecc71"
+    
+    wind_streak = calculate_wind_streak(df, selected_date)
+    streak_text = f"已持續 {wind_streak} 天"
+
     if "強" in str(wind_status): wind_color = "#e74c3c"
     elif "亂" in str(wind_status): wind_color = "#9b59b6"
     elif "陣" in str(wind_status): wind_color = "#f1c40f"
-    render_metric_card(c1, "今日風向", wind_status, wind_color)
+    
+    render_metric_card(c1, "今日風向", wind_status, wind_color, sub_value=streak_text)
+    
     render_metric_card(c2, "🪁 打工型風箏", day_data['part_time_count'], "#f39c12")
     render_metric_card(c3, "💪 上班族強勢週", day_data['worker_strong_count'], "#3498db")
     render_metric_card(c4, "📈 上班族週趨勢", day_data['worker_trend_count'], "#9b59b6")
 
-    # 【修正】使用 .banner-text 確保白色
     st.markdown('<div class="strategy-banner worker-banner"><p class="banner-text">👨‍💼 上班族策略 (Worker Strategy)</p></div>', unsafe_allow_html=True)
     w1, w2 = st.columns(2)
     with w1: st.markdown("### 🚀 強勢週 TOP 3"); st.markdown(render_stock_tags(day_data['worker_strong_list']), unsafe_allow_html=True)
@@ -325,7 +421,7 @@ def show_dashboard():
     chart_df = df.copy(); chart_df['date_dt'] = pd.to_datetime(chart_df['date']); chart_df = chart_df.sort_values('date_dt', ascending=True)
     chart_df['Month'] = chart_df['date_dt'].dt.strftime('%Y-%m')
 
-    tab1, tab2, tab3 = st.tabs(["📈 風箏數量", "🌬️ 每日風度分佈", "📅 每月風度統計"])
+    tab1, tab2, tab3 = st.tabs(["📈 每日風箏數量", "🌬️ 每日風度分佈", "📅 每月風度統計"])
     
     axis_config = alt.Axis(labelFontSize=16, titleFontSize=20, labelColor='#333333', titleColor='#333333', labelFontWeight='bold', grid=True, gridColor='#E0E0E0')
     legend_config = alt.Legend(orient='top', labelFontSize=16, titleFontSize=20, labelColor='#333333', titleColor='#333333')
@@ -393,6 +489,18 @@ def show_admin_panel():
     st.title("⚙️ 資料管理後台")
     if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
 
+    with st.expander("🛠️ API 診斷工具 (若遇到 404 Error 請按此)"):
+        if st.button("🔍 列出所有可用模型"):
+            try:
+                models = genai.list_models()
+                st.write("您的 API Key 可存取以下模型：")
+                for m in models:
+                    if 'generateContent' in m.supported_generation_methods:
+                        st.code(m.name)
+                st.info("請將上述列表中，支援 vision/flash 的模型名稱填入程式碼中的 `model_name`。")
+            except Exception as e:
+                st.error(f"查詢失敗: {e}")
+
     st.subheader("📥 新增/更新資料")
     uploaded_file = st.file_uploader("上傳截圖", type=["png", "jpg", "jpeg"])
     if 'preview_df' not in st.session_state: st.session_state.preview_df = None
@@ -405,8 +513,41 @@ def show_admin_panel():
                 if "error" in json_text and len(json_text) < 100: st.error(f"API 錯誤: {json_text}")
                 else:
                     raw_data = json.loads(json_text)
+                    
+                    if isinstance(raw_data, dict) and "error" in raw_data:
+                        error_msg = raw_data["error"]
+                        st.error(f"⚠️ API 回傳錯誤: {error_msg}")
+                        if "429" in str(error_msg) or "quota" in str(error_msg).lower():
+                            st.warning("💡 提示：您的 API 免費額度暫時滿了。請等待 1 分鐘後再試。")
+                        st.stop()
+
+                    def find_valid_records(data):
+                        found = []
+                        if isinstance(data, list):
+                            for item in data:
+                                found.extend(find_valid_records(item))
+                        elif isinstance(data, dict):
+                            if "col_01" in data:
+                                found.append(data)
+                            else:
+                                for val in data.values():
+                                    found.extend(find_valid_records(val))
+                        return found
+
+                    raw_data = find_valid_records(raw_data)
+                    
+                    with st.expander("🕵️‍♂️ 開發者除錯資訊 (若資料空白請點我)"):
+                        st.write("解析出的資料筆數:", len(raw_data))
+                        st.write("原始 JSON 內容:", json.loads(json_text)) 
+
+                    if not isinstance(raw_data, list):
+                        raw_data = []
+
                     processed_list = []
                     for item in raw_data:
+                        if not isinstance(item, dict):
+                            continue 
+                        
                         def merge_keys(prefix, count):
                             res = []; seen = set()
                             for i in range(1, count + 1):
@@ -416,11 +557,6 @@ def show_admin_panel():
                                     if val_str not in seen: res.append(val_str); seen.add(val_str)
                             return "、".join(res)
                         
-                        # 這裡的映射邏輯較複雜，V86 已經使用更直觀的 col_XX，這裡直接硬對應
-                        # Col 01~05
-                        if not item.get("col_01"): continue
-                        
-                        # 輔助取值
                         def get_col_stocks(start, end):
                             res = []; seen = set()
                             for i in range(start, end + 1):
@@ -430,13 +566,13 @@ def show_admin_panel():
                                     if val_str not in seen: res.append(val_str); seen.add(val_str)
                             return "、".join(res)
 
+                        if not item.get("col_01"): continue
                         record = {
                             "date": str(item.get("col_01")).replace("/", "-"),
                             "wind": item.get("col_02", ""),
                             "part_time_count": item.get("col_03", 0),
                             "worker_strong_count": item.get("col_04", 0),
                             "worker_trend_count": item.get("col_05", 0),
-                            
                             "worker_strong_list": get_col_stocks(6, 8),
                             "worker_trend_list": get_col_stocks(9, 11),
                             "boss_pullback_list": get_col_stocks(12, 14),
@@ -462,11 +598,13 @@ def show_admin_panel():
     st.subheader("📝 歷史資料庫編輯")
     df = load_db()
     if not df.empty:
+        st.markdown("在此可修改所有歷史紀錄：")
         edited_history = st.data_editor(df, num_rows="dynamic", use_container_width=True)
         if st.button("💾 儲存變更"):
             save_full_history(edited_history)
             st.success("更新成功！"); time.sleep(1); st.rerun()
-        if st.button("🗑️ 清空資料庫"): clear_db(); st.warning("已清空"); st.rerun()
+        if st.button("🗑️ 清空資料庫 (慎用)"): clear_db(); st.warning("已清空"); st.rerun()
+    else: st.info("目前無資料")
 
 # --- 7. 主導航 ---
 def main():
@@ -474,29 +612,18 @@ def main():
     if 'is_admin' not in st.session_state: st.session_state.is_admin = False
 
     options = ["📊 戰情儀表板"]
-    
-    # 密碼邏輯
     if not st.session_state.is_admin:
         with st.sidebar.expander("管理員登入"):
             pwd = st.text_input("密碼", type="password")
-            if pwd == "8899abc168": 
-                st.session_state.is_admin = True
-                st.rerun()
+            if pwd == "8899abc168": st.session_state.is_admin = True; st.rerun()
     
     if st.session_state.is_admin:
         options.append("⚙️ 資料管理後台")
-        if st.sidebar.button("登出"):
-            st.session_state.is_admin = False
-            st.rerun()
+        if st.sidebar.button("登出"): st.session_state.is_admin = False; st.rerun()
 
     page = st.sidebar.radio("前往", options)
-    
-    if page == "📊 戰情儀表板":
-        show_dashboard()
-    elif page == "⚙️ 資料管理後台":
-        show_admin_panel()
+    if page == "📊 戰情儀表板": show_dashboard()
+    elif page == "⚙️ 資料管理後台": show_admin_panel()
 
 if __name__ == "__main__":
     main()
-
-
