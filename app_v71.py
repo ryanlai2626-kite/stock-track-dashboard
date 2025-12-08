@@ -140,12 +140,13 @@ st.markdown("""
 
     /* 5. 展開後的下拉列表清單 */
     ul[data-baseweb="menu"] {
-        background-color: #2c3e50 !important;
-    }
+    div[data-baseweb="popover"] div {
+        background-color: #2c3e50 !important; /* 強制深色背景 */    }
     
-    /* 6. 列表中的選項文字 */
+    /* 6. 列表中的選項文字 【關鍵修正】強制每一個選項的背景都是深色 (解決手機版變白問題) */
     li[role="option"] {
-        color: #FFFFFF !important;
+        background-color: #2c3e50 !important; /* 沒選中時也要是深色 */
+        color: #FFFFFF !important;             /* 白色字 */
     }
 
     /* 7. 滑鼠滑過選項的效果 */
@@ -635,6 +636,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
