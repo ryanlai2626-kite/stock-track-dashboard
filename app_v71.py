@@ -412,98 +412,67 @@ def get_global_market_data():
         print(f"Global Market Data Error: {e}")
         return []
 
-# --- V150: 恐懼與貪婪指數 (Header偽裝 + 錯誤處理) ---
-@st.cache_data(ttl=3600)
+# --- 恐懼與貪婪指數 (V154: 結構相容修復版) ---
+@st.cache_data(ttl=300) 
 def get_cnn_fear_greed_full():
-    """
-    抓取 CNN Fear & Greed Index 完整歷史資料 (Header增強 + 型態安全版)
-    """
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-    
-    # 模擬真實瀏覽器 Header (User-Agent Rotation 概念)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://www.cnn.com/",
         "Origin": "https://www.cnn.com",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site"
+        "Cache-Control": "no-cache", 
+        "Pragma": "no-cache"
     }
-    
     try:
-        r = requests.get(url, headers=headers, timeout=10) # 延長 Timeout
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
             
-            # 安全轉型
-            def safe_get_score(val):
-                try: return int(float(val))
+            # 保留小數點後 1 位
+            def safe_num(v): 
+                try: return round(float(v), 1)
                 except: return 50
                 
-            def safe_get_timestamp(val):
-                try: return float(val)
+            def safe_ts(v):
+                try: return float(v)
                 except: return None
             
-            # 1. 目前數值
             fg_obj = data.get('fear_and_greed', {})
-            current_score = safe_get_score(fg_obj.get('score', 50))
-            current_rating = fg_obj.get('rating', 'Neutral')
-            timestamp = safe_get_timestamp(fg_obj.get('timestamp'))
+            current_score = safe_num(fg_obj.get('score', 50))
+            timestamp = safe_ts(fg_obj.get('timestamp'))
             
-            # 2. 歷史趨勢計算
             history_data = data.get('fear_and_greed_historical', {}).get('data', [])
             
-            # Helper to find closest score to a past date
-            def get_score_days_ago(days):
+            # 搜尋歷史數據 helper
+            def get_past(days):
                 if not history_data: return None, None
-                target_ts = (datetime.now() - timedelta(days=days)).timestamp() * 1000
-                
-                def get_x(item): 
-                    try: return float(item['x']) 
-                    except: return 0.0
-                    
-                if not history_data: return None, None
-                closest = min(history_data, key=lambda item: abs(get_x(item) - target_ts))
-                
-                try:
-                    score = int(float(closest['y']))
-                    ts = float(closest['x'])
-                    dt_str = datetime.fromtimestamp(ts/1000).strftime('%Y/%m/%d')
-                    return score, dt_str
-                except:
-                    return None, None
+                target = (datetime.now() - timedelta(days=days)).timestamp() * 1000
+                closest = min(history_data, key=lambda x: abs((float(x['x']) if 'x' in x else 0) - target))
+                try: 
+                    return round(float(closest['y']), 1), datetime.fromtimestamp(float(closest['x'])/1000).strftime('%Y/%m/%d')
+                except: return None, None
 
-            prev_close, prev_date = get_score_days_ago(1)
-            week_ago, week_date = get_score_days_ago(7)
-            month_ago, month_date = get_score_days_ago(30)
-            year_ago, year_date = get_score_days_ago(365)
+            p_sc, p_dt = get_past(1)
+            w_sc, w_dt = get_past(7)
+            m_sc, m_dt = get_past(30)
+            y_sc, y_dt = get_past(365)
             
-            date_display = ""
-            if timestamp:
-                date_display = datetime.fromtimestamp(timestamp/1000).strftime('%Y/%m/%d')
+            date_str = datetime.fromtimestamp(timestamp/1000).strftime('%Y/%m/%d') if timestamp else ""
             
+            # V154 Fix: 改回 Dictionary 結構以符合您的 render_global_markets 函式
             return {
                 "score": current_score,
-                "rating": current_rating,
-                "date": date_display,
+                "date": date_str,
                 "history": {
-                    "prev": {"score": prev_close, "date": prev_date},
-                    "week": {"score": week_ago, "date": week_date},
-                    "month": {"score": month_ago, "date": month_date},
-                    "year": {"score": year_ago, "date": year_date}
+                    "prev": {"score": p_sc, "date": p_dt},
+                    "week": {"score": w_sc, "date": w_dt},
+                    "month": {"score": m_sc, "date": m_dt},
+                    "year": {"score": y_sc, "date": y_dt}
                 }
             }
-        elif r.status_code == 403:
-            return {"error": "CNN拒絕存取 (403 Forbidden - Cloud Block)"}
-        else:
-            return {"error": f"HTTP {r.status_code}"}
-    except requests.exceptions.Timeout:
-        return {"error": "連線逾時 (Timeout)"}
-    except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"HTTP {r.status_code}"}
+    except Exception as e: return {"error": str(e)}
 
 def get_rating_label_cn(score):
     if score is None: return "未知", "#95a5a6"
