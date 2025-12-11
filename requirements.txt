@@ -4,3 +4,6 @@ pandas
 altair
 yfinance
 plotly
+requests
+lxml
+fake-useragent
