@@ -1416,15 +1416,15 @@ def show_dashboard():
             
             # 卡片 1: 積極循環
             val_act = f"{d_act} <span style='font-size:16px; color:#999'>({cnt_strong}/{cnt_chaos})</span> <span style='font-size:12px'>天</span>"
-            c1 = make_card_html("bd-red", "🔴 強風/亂流", val_act, f"佔比 {p_act:.0f}%", "#e74c3c", p_act)
+            c1 = make_card_html("bd-red", "🔴 強風/亂流循環", val_act, f"佔比 {p_act:.0f}%", "#e74c3c", p_act)
             c2 = make_card_html("bd-red", "🚀 積極績效", f"<span style='color:{c_act_val}'>{r_act:+.2f}%</span>", f"預估報酬{sub_text_suffix}")
             
             val_tran = f"{d_tran} <span style='font-size:12px'>天</span>"
             c3 = make_card_html("bd-yellow", "🟡 循環交界", val_tran, f"佔比 {p_tran:.0f}%", "#f1c40f", p_tran)
-            c4 = make_card_html("bd-yellow", "⚖️ 交界績效", f"<span style='color:{c_tran_val}'>{r_tran:+.2f}%</span>", f"預估波動{sub_text_suffix}")
+            c4 = make_card_html("bd-yellow", "⚖️ 無方向績效", f"<span style='color:{c_tran_val}'>{r_tran:+.2f}%</span>", f"預估波動{sub_text_suffix}")
             
             val_pass = f"{d_pass} <span style='font-size:16px; color:#999'>({cnt_calm}/{cnt_gust})</span> <span style='font-size:12px'>天</span>"
-            c5 = make_card_html("bd-green", "🟢 無風/陣風", val_pass, f"佔比 {p_pass:.0f}%", "#2ecc71", p_pass)
+            c5 = make_card_html("bd-green", "🟢 無風/陣風循環", val_pass, f"佔比 {p_pass:.0f}%", "#2ecc71", p_pass)
             c6 = make_card_html("bd-green", "🛡️ 保守績效", f"<span style='color:{c_pass_val}'>{r_pass:+.2f}%</span>", f"預估損益{sub_text_suffix}")
             
             st.markdown(f'<div class="dashboard-grid-v183">{c1}{c2}{c3}{c4}{c5}{c6}</div>', unsafe_allow_html=True)
@@ -1761,3 +1761,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
