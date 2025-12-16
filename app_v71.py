@@ -285,15 +285,9 @@ def smart_get_code(stock_name):
     code, _, _ = smart_get_code_and_sector(stock_name)
     return code
 
-# --- 【V143】預先批次抓取成交值 (含手動救援 Override) ---
+# --- 【V145】預先批次抓取成交值 (終極修復：加入 Fast Info 即時救援) ---
 @st.cache_data(ttl=300)
 def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=None):
-    """
-    Args:
-        manual_override_json (str): JSON string like '{"StockA": 10.5, "StockB": 5.2}' from DB
-    """
-    
-    # 1. 建立初始名單
     if not stock_list_str: stock_list_str = []
     unique_names = set()
     for s in stock_list_str:
@@ -304,31 +298,22 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
             
     result_map = {}
     
-    # 2. 優先處理手動救援資料 (Manual Override)
+    # 1. Manual Override
     if manual_override_json:
         try:
             manual_data = json.loads(manual_override_json)
             if isinstance(manual_data, dict):
                 for k, v in manual_data.items():
-                    # 支援名稱或代碼匹配
                     result_map[k] = float(v)
-                    # 嘗試反查代碼或名稱以增加覆蓋率
                     code, name, _ = smart_get_code_and_sector(k)
                     if code: result_map[code] = float(v)
                     if name: result_map[name] = float(v)
-        except:
-            pass # JSON 解析失敗就忽略
+        except: pass
 
-    # 3. 找出還沒數值的股票，準備爬蟲
-    to_fetch_names = []
-    for name in unique_names:
-        if name not in result_map:
-            to_fetch_names.append(name)
-            
-    if not to_fetch_names:
-        return result_map
+    # 2. 準備爬蟲名單
+    to_fetch_names = [name for name in unique_names if name not in result_map]
+    if not to_fetch_names: return result_map
 
-    # 4. 準備 yfinance 代碼
     code_map = {}
     tickers = []
     for name in to_fetch_names:
@@ -340,19 +325,21 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
             
     if not tickers: return result_map
     
+    # 3. 嘗試批次下載 (History)
     try:
         t_date_dt = pd.to_datetime(target_date)
-        start_dt = t_date_dt - timedelta(days=20)
-        end_dt = t_date_dt + timedelta(days=1)
+        start_dt = t_date_dt - timedelta(days=5) 
+        end_dt = t_date_dt + timedelta(days=2)
         
         start_str = start_dt.strftime("%Y-%m-%d")
         end_str = end_dt.strftime("%Y-%m-%d")
         
-        # 修正 yfinance 可能的問題
+        # 使用 threads=True 加速
         data = yf.download(tickers, start=start_str, end=end_str, group_by='ticker', progress=False, threads=True)
         
         for code, name in code_map.items():
             found_val = 0
+            # A. 先試 History Data
             for suffix in ['.TW', '.TWO']:
                 try:
                     ticker = f"{code}{suffix}"
@@ -361,19 +348,43 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
                         if not df.empty:
                             df.index = df.index.tz_localize(None).normalize()
                             target_ts = t_date_dt.normalize()
-                            valid_rows = df[df.index <= target_ts]
                             
-                            if not valid_rows.empty:
-                                row = valid_rows.iloc[-1]
-                                price = float(row['Close'])
-                                vol = float(row['Volume'])
-                                if price > 0 and vol > 0:
-                                    val = (price * vol) / 100000000
-                                    if val > 0.01:
-                                        found_val = val
-                                        break
+                            # 優先抓取 target_date
+                            if target_ts in df.index:
+                                row = df.loc[target_ts]
+                            else:
+                                # 抓最近的一筆
+                                valid_rows = df[df.index <= target_ts]
+                                if not valid_rows.empty: row = valid_rows.iloc[-1]
+                                else: continue
+                                    
+                            price = float(row['Close'])
+                            vol = float(row['Volume'])
+                            if price > 0 and vol > 0:
+                                val = (price * vol) / 100000000
+                                if val > 0.01:
+                                    found_val = val
+                                    break
                 except: pass
             
+            # B. 【關鍵修復】如果 History 抓不到 (found_val=0)，改用 Fast Info (即時數據)
+            if found_val == 0:
+                for suffix in ['.TW', '.TWO']:
+                    try:
+                        ticker_obj = yf.Ticker(f"{code}{suffix}")
+                        fi = ticker_obj.fast_info
+                        # 檢查是否有今日數據
+                        last_price = fi.get('last_price', 0)
+                        last_vol = fi.get('last_volume', 0)
+                        
+                        # 簡單檢核：如果價格>0且量>0，就當作是有效的
+                        if last_price > 0 and last_vol > 0:
+                            val = (last_price * last_vol) / 100000000
+                            if val > 0.01:
+                                found_val = val
+                                break
+                    except: pass
+
             if found_val > 0:
                 result_map[name] = found_val
                 result_map[code] = found_val
@@ -1777,6 +1788,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
