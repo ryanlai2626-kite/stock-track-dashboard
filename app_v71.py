@@ -379,7 +379,7 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
     except Exception as e:
         return result_map
 
-# --- 全球市場即時報價 (V150: 雲端環境強制手動計算修復版) ---
+# --- 全球市場即時報價 (V159: 改用 fast_info 修復漲跌幅錯誤) ---
 @st.cache_data(ttl=15) # 稍微放寬 TTL 避免一直被擋，但保持相對即時
 def get_global_market_data():
     try:
@@ -399,20 +399,27 @@ def get_global_market_data():
             try:
                 stock = yf.Ticker(ticker_code)
                 
-                # V150 關鍵修正：在雲端環境放棄使用 fast_info 或 info
-                # 改為強制抓取過去 5 天的歷史數據，並手動計算 最新價 vs 昨日收盤價
-                # 這樣可以避免雲端主機時間差導致 Yahoo 回傳錯誤的 change 數據
-                hist = stock.history(period="5d", interval="1d")
+                # V159 關鍵修正：改用 fast_info 取得即時報價
+                # history() 在某些時區或盤中時段，最後一筆資料可能會有滯後，導致算出昨天的漲跌幅
+                # fast_info 直接提供 'last_price' (最新價) 與 'previous_close' (昨日收盤)，計算最準確
                 
-                if hist.empty or len(hist) < 2:
-                    continue
-                
-                # 取得最新一筆 (今天的收盤或即時價)
-                last_price = hist['Close'].iloc[-1]
-                
-                # 取得倒數第二筆 (昨天的收盤價)
-                prev_close = hist['Close'].iloc[-2]
-                
+                try:
+                    info = stock.fast_info
+                    last_price = info['last_price']
+                    prev_close = info['previous_close']
+                    
+                    # 防呆：如果 fast_info 抓不到 (有時會發生)，則退回使用 history
+                    if last_price is None or prev_close is None:
+                        raise ValueError("Fast info missing")
+                        
+                except:
+                    # 備援方案：使用 history (但須注意日期)
+                    hist = stock.history(period="5d", interval="1d")
+                    if hist.empty or len(hist) < 2:
+                        continue
+                    last_price = hist['Close'].iloc[-1]
+                    prev_close = hist['Close'].iloc[-2]
+
                 change = last_price - prev_close
                 pct_change = (change / prev_close) * 100
                 
@@ -1761,4 +1768,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
