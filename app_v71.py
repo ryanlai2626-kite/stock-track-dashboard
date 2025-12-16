@@ -379,7 +379,7 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
     except Exception as e:
         return result_map
 
-# --- 全球市場即時報價 (V159: 改用 fast_info 修復漲跌幅錯誤) ---
+# --- 全球市場即時報價 (V160: 強化版 - 雙重驗證修復數據延遲) ---
 @st.cache_data(ttl=15) # 稍微放寬 TTL 避免一直被擋，但保持相對即時
 def get_global_market_data():
     try:
@@ -399,27 +399,33 @@ def get_global_market_data():
             try:
                 stock = yf.Ticker(ticker_code)
                 
-                # V159 關鍵修正：改用 fast_info 取得即時報價
-                # history() 在某些時區或盤中時段，最後一筆資料可能會有滯後，導致算出昨天的漲跌幅
-                # fast_info 直接提供 'last_price' (最新價) 與 'previous_close' (昨日收盤)，計算最準確
+                # 初始化變數
+                last_price = None
+                prev_close = None
+                change = 0
+                pct_change = 0
                 
+                # 方法 1: 嘗試使用 fast_info (通常最即時)
                 try:
                     info = stock.fast_info
                     last_price = info['last_price']
                     prev_close = info['previous_close']
-                    
-                    # 防呆：如果 fast_info 抓不到 (有時會發生)，則退回使用 history
-                    if last_price is None or prev_close is None:
-                        raise ValueError("Fast info missing")
-                        
                 except:
-                    # 備援方案：使用 history (但須注意日期)
-                    hist = stock.history(period="5d", interval="1d")
-                    if hist.empty or len(hist) < 2:
-                        continue
-                    last_price = hist['Close'].iloc[-1]
-                    prev_close = hist['Close'].iloc[-2]
+                    pass
 
+                # 方法 2: 如果 fast_info 失敗或數值異常，使用 history 備援
+                # 異常判斷：如果 last_price 或 prev_close 為 None
+                if last_price is None or prev_close is None:
+                    hist = stock.history(period="5d") # 抓取 5 天以確保有足夠數據
+                    if not hist.empty and len(hist) >= 2:
+                        last_price = hist['Close'].iloc[-1]
+                        prev_close = hist['Close'].iloc[-2]
+                
+                # 再次檢查，如果還是沒有數據，就跳過
+                if last_price is None or prev_close is None:
+                    continue
+
+                # 計算漲跌
                 change = last_price - prev_close
                 pct_change = (change / prev_close) * 100
                 
@@ -1768,5 +1774,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
