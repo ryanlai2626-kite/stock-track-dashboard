@@ -899,30 +899,65 @@ def get_yahoo_realtime_rank(limit=20):
     return pd.DataFrame()
 
 def plot_market_index(index_type='上市', period='6mo'):
-    ticker_map = {'上市': '^TWII', '上櫃': '^TWOII'}
+    # 新增 BTC 和 ETH 的對應
+    ticker_map = {
+        '上市': '^TWII', 
+        '上櫃': '^TWOII',
+        '比特幣': 'BTC-USD',
+        '乙太幣': 'ETH-USD'
+    }
     ticker = ticker_map.get(index_type, '^TWII')
+    
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(period=period)
         if df.empty: return None, f"無法取得 {index_type} 指數資料"
+        
+        # 計算均線
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, subplot_titles=(f'{index_type}指數', '成交量'), row_width=[0.2, 0.8])
+        
+        # 建立雙子圖 (上圖K線，下圖成交量)
+        fig = make_subplots(
+            rows=2, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.03, 
+            subplot_titles=(f'{index_type}走勢', '成交量'), 
+            row_heights=[0.7, 0.3] # 調整高度比例
+        )
+        
+        # --- K線圖 (Row 1) ---
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='K線', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MA5'], line=dict(color='#9C27B0', width=1.5), name='MA5 (週)'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MA10'], line=dict(color='#FFC107', width=1.5), name='MA10 (雙週)'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='#2196F3', width=1.5), name='MA20 (月)'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MA60'], line=dict(color='#4CAF50', width=1.5), name='MA60 (季)'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA5'], line=dict(color='#9C27B0', width=1.5), name='MA5'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA10'], line=dict(color='#FFC107', width=1.5), name='MA10'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='#2196F3', width=1.5), name='MA20'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA60'], line=dict(color='#4CAF50', width=1.5), name='MA60'), row=1, col=1)
+        
+        # --- 成交量 (Row 2) ---
         colors = ['#ef5350' if row['Open'] - row['Close'] <= 0 else '#26a69a' for index, row in df.iterrows()]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='成交量'), row=2, col=1)
-        fig.update_layout(height=600, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='white', plot_bgcolor='#FAFAFA', font=dict(family="Arial, sans-serif", size=12, color='#333333'), legend=dict(orientation="h", yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)", bordercolor="#E0E0E0", borderwidth=1), xaxis_rangeslider_visible=False, hovermode='x unified')
+        
+        # --- 版面設定 ---
+        fig.update_layout(
+            height=600, 
+            margin=dict(l=20, r=20, t=40, b=20), 
+            paper_bgcolor='white', 
+            plot_bgcolor='#FAFAFA', 
+            font=dict(family="Arial, sans-serif", size=12, color='#333333'), 
+            legend=dict(orientation="h", yanchor="top", y=1.02, xanchor="left", x=0.01), 
+            xaxis_rangeslider_visible=False, 
+            hovermode='x unified'
+        )
+        
+        # 設定座標軸樣式
         grid_style = dict(showgrid=True, gridwidth=1, gridcolor='#F0F0F0')
         fig.update_xaxes(**grid_style, row=1, col=1)
-        fig.update_yaxes(**grid_style, title='指數', row=1, col=1)
+        fig.update_yaxes(**grid_style, title='價格', row=1, col=1)
         fig.update_xaxes(**grid_style, row=2, col=1)
         fig.update_yaxes(**grid_style, title='量', row=2, col=1)
+        
         return fig, ""
     except Exception as e: return None, f"繪圖錯誤: {str(e)}"
 
@@ -1189,8 +1224,9 @@ def show_dashboard():
     with st.expander("📊 大盤指數走勢圖 (點擊展開)", expanded=False):
         col_m1, col_m2 = st.columns([1, 4])
         with col_m1:
-            market_type = st.radio("選擇市場", ["上市", "上櫃"], horizontal=True)
-            market_period = st.selectbox("週期", ["1mo", "3mo", "6mo", "1y"], index=2, key="market_period")
+            # 修改這裡：加入 "比特幣", "乙太幣"
+            market_type = st.radio("選擇市場", ["上市", "上櫃", "比特幣", "乙太幣"], horizontal=True)
+            market_period = st.selectbox("週期", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=2, key="market_period")
         with col_m2:
             fig, err = plot_market_index(market_type, market_period)
             if fig: st.plotly_chart(fig, use_container_width=True)
@@ -1734,5 +1770,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
