@@ -1559,7 +1559,7 @@ def plot_wind_gauge_tpex_style(wind_status, streak_days, tpex_data):
     )
     
     fig.add_annotation(
-        x=0, y=-0.30,
+        x=0, y=-0.35,
         text=f"已持續 {streak_days} 天",
         showarrow=False,
         font=dict(size=14, color="#888888", family="Microsoft JhengHei")
@@ -2358,3 +2358,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
