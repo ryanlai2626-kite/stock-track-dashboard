@@ -1404,9 +1404,9 @@ def plot_wind_gauge_tpex_style(wind_status, streak_days, tpex_data):
     fig = go.Figure()
 
     # --- 幾何參數 ---
-    R_OUTER_LINE = 1.0     
-    R_TICK_OUT = 0.96      
-    R_TICK_IN_MAJOR = 0.88 # 大刻度稍微短一點，更精緻
+    R_OUTER_LINE = 1.01     
+    R_TICK_OUT = 0.95      
+    R_TICK_IN_MAJOR = 0.86 # 大刻度稍微短一點，更精緻
     R_TICK_IN_MINOR = 0.92 
     R_LABEL = 1.18         # 文字稍微往外推一點
     R_POINTER = 0.70       
@@ -1442,7 +1442,7 @@ def plot_wind_gauge_tpex_style(wind_status, streak_days, tpex_data):
         fig.add_trace(go.Scatter(
             x=x_pts, y=y_pts, 
             mode='lines', 
-            line=dict(color=col, width=10), # 線條稍微加粗一點點
+            line=dict(color=col, width=7), # 線條稍微加粗一點點
             hoverinfo='skip', showlegend=False
         ))
 
@@ -1614,6 +1614,64 @@ def ai_analyze_v86(image):
         return response.text
     except Exception as e: return json.dumps({"error": str(e)})
 
+
+# --- [V2.2] 強壯版櫃買指數獲取 (官方 API -> YF Fast -> YF History) ---
+def get_tpex_robust():
+    # 初始化預設值
+    tpex_data = {'price': 0.0, 'change': 0.0, 'pct_change': 0.0}
+    
+    # ---------------------------------------
+    # 策略 1: 官方 API (最準，但雲端易被擋)
+    # ---------------------------------------
+    try:
+        official_data = fetch_official_tw_index_data()
+        if "^TWOII" in official_data:
+            # 檢查數據是否有效 (非 0)
+            if official_data["^TWOII"]['price'] > 0:
+                return official_data["^TWOII"]
+    except Exception:
+        pass
+
+    # ---------------------------------------
+    # 策略 2: Yahoo Finance (終極備援)
+    # ---------------------------------------
+    try:
+        # 使用 ^TWOII (櫃買指數代號)
+        ticker = yf.Ticker("^TWOII")
+        
+        # 【關鍵修正】改用 history 抓取最近 5 天資料
+        # fast_info 在雲端有時會失效，但 history 幾乎都能拿到表格
+        df = ticker.history(period="5d")
+        
+        if not df.empty:
+            # 取得最後一筆收盤價 (即時價或昨日收盤)
+            last_price = float(df['Close'].iloc[-1])
+            
+            # 嘗試取得前一筆收盤價來計算漲跌
+            if len(df) >= 2:
+                prev_close = float(df['Close'].iloc[-2])
+            else:
+                # 如果只有一筆資料，嘗試從 info 抓昨收，若無則設為相同
+                prev_close = ticker.info.get('previousClose', last_price)
+            
+            # 防止昨收為 0
+            if prev_close <= 0: prev_close = last_price
+
+            change = last_price - prev_close
+            pct_change = (change / prev_close) * 100
+            
+            tpex_data = {
+                'price': last_price,
+                'change': change,
+                'pct_change': pct_change
+            }
+            return tpex_data
+            
+    except Exception as e:
+        print(f"TPEx Fallback Error: {e}")
+
+    return tpex_data
+
 # --- 5. 頁面視圖：戰情儀表板 (前台) [含重新整理按鈕版] ---
 def show_dashboard():
     df = load_db()
@@ -1701,9 +1759,10 @@ def show_dashboard():
     wind_status = day_data['wind']
     wind_streak = calculate_wind_streak(df, selected_date)
     
-# 【新增】獲取即時(或當日)櫃買指數資料，用於儀表板顯示
-    # 這裡我們嘗試從全域快取資料中抓取，如果沒有則使用預設值
-    tpex_info = {'price': 0, 'change': 0, 'pct_change': 0}
+# 【修改】使用強壯版函式獲取櫃買數據
+    # 無論是 Local 還是 Cloud，這行都能確保盡力拿到數字
+    tpex_info = get_tpex_robust()
+    
     # 1. 優先嘗試官方 API (Local端最準，但雲端可能被擋)
     try:
         official_data = fetch_official_tw_index_data()
@@ -2299,4 +2358,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
