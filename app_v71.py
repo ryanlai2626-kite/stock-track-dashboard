@@ -1370,158 +1370,213 @@ def calculate_monthly_stats(df):
 import math
 import plotly.graph_objects as go
 
-# --- [V5 絕對座標修正版] 風度儀表板 ---
-# 放棄 Plotly 內建 Gauge，改用幾何繪圖以確保長寬比與落點絕對精準
-def plot_wind_gauge(wind_status, streak_days):
-    # 1. 定義顏色與文字設定
-    # 順序：綠(左) -> 黃 -> 紫 -> 紅(右)
-    # 角度對應 (0度在右邊, 180度在左邊)
-    sectors = [
-        {'label': '無風', 'color': '#2ecc71', 'text_color': 'white', 'start': 180, 'end': 135},
-        {'label': '陣風', 'color': '#f1c40f', 'text_color': 'black', 'start': 135, 'end': 90}, # 黃底改黑字
-        {'label': '亂流', 'color': '#9b59b6', 'text_color': 'white', 'start': 90,  'end': 45},
-        {'label': '強風', 'color': '#e74c3c', 'text_color': 'white', 'start': 45,  'end': 0},
-    ]
-
-    # 2. 判斷當前狀態的角度
-    clean_status = str(wind_status).strip()
-    target_angle = 90 # 預設指向上方
-    current_color = '#95a5a6'
+# --- [V2.1] 風度儀表板 (極致圓滑 + 循環交界強化版) ---
+def plot_wind_gauge_tpex_style(wind_status, streak_days, tpex_data):
+    """
+    wind_status: str, e.g., "強風", "無風"
+    streak_days: int
+    tpex_data: dict, e.g., {'price': 265.5, 'change': 1.2, 'pct_change': 0.45}
+    """
+    # 1. 定義顏色
+    colors = {
+        'no_wind': '#2ecc71',   # 無風 (綠)
+        'gust': '#f1c40f',      # 陣風 (黃)
+        'chaos': '#9b59b6',     # 亂流 (紫)
+        'strong': '#e74c3c'     # 強風 (紅)
+    }
     
-    # 根據狀態決定指針角度 (指在該區塊的正中間)
-    if clean_status == '無風': target_angle = 157.5; current_color = '#2ecc71'
-    elif clean_status == '陣風': target_angle = 112.5; current_color = '#f1c40f'
-    elif clean_status == '亂流': target_angle = 67.5;  current_color = '#9b59b6'
-    elif clean_status == '強風': target_angle = 22.5;  current_color = '#e74c3c'
-
+    # 決定指針位置
+    clean_status = str(wind_status).strip()
+    score = 0
+    curr_color = '#95a5a6'
+    
+    if clean_status == '無風':
+        score = 12.5; curr_color = colors['no_wind']
+    elif clean_status == '陣風':
+        score = 37.5; curr_color = colors['gust']
+    elif clean_status == '亂流':
+        score = 62.5; curr_color = colors['chaos']
+    elif clean_status == '強風':
+        score = 87.5; curr_color = colors['strong']
+    else:
+        score = 50 
+    
     fig = go.Figure()
 
-    # 3. 繪製扇形背景 (使用 Scatter 填充)
-    # 建立一個輔助函式來產生扇形路徑
-    def get_fan_shape(start_deg, end_deg, color):
-        # 內圓半徑與外圓半徑
-        r_in = 0.5
-        r_out = 1.0
-        
-        # 產生圓弧上的點 (每 2 度一個點，讓線條滑順)
-        path_x = []
-        path_y = []
-        
-        # 外圓弧
-        for deg in range(start_deg, end_deg - 1, -2):
-            rad = math.radians(deg)
-            path_x.append(r_out * math.cos(rad))
-            path_y.append(r_out * math.sin(rad))
-        
-        # 內圓弧 (反向回來)
-        for deg in range(end_deg, start_deg + 1, 2):
-            rad = math.radians(deg)
-            path_x.append(r_in * math.cos(rad))
-            path_y.append(r_in * math.sin(rad))
-            
-        # 閉合多邊形
-        return go.Scatter(
-            x=path_x, y=path_y, 
-            fill='toself', 
-            fillcolor=color, 
-            line=dict(color='white', width=1), # 白色邊框分隔
-            mode='lines', 
-            showlegend=False,
-            hoverinfo='skip'
-        )
+    # --- 幾何參數 ---
+    R_OUTER_LINE = 1.0     
+    R_TICK_OUT = 0.96      
+    R_TICK_IN_MAJOR = 0.88 # 大刻度稍微短一點，更精緻
+    R_TICK_IN_MINOR = 0.92 
+    R_LABEL = 1.18         # 文字稍微往外推一點
+    R_POINTER = 0.70       
 
-    for sector in sectors:
-        # 畫扇形
-        fig.add_trace(get_fan_shape(sector['start'], sector['end'], sector['color']))
+    def get_xy_from_angle(r, angle_deg):
+        rad = math.radians(angle_deg)
+        return r * math.cos(rad), r * math.sin(rad)
+
+    shapes = []
+    
+    # 2. 【最外層】四個風度區塊 (高解析度圓滑版)
+    # 為了讓線條圓滑，steps 設為 100
+    segments = [
+        (0, 25, colors['no_wind']),
+        (25, 50, colors['gust']),
+        (50, 75, colors['chaos']),
+        (75, 100, colors['strong'])
+    ]
+    
+    for start_val, end_val, col in segments:
+        start_angle = 180 - (start_val / 100) * 180
+        end_angle = 180 - (end_val / 100) * 180
         
-        # 畫文字 (計算扇形中心點)
-        mid_angle = (sector['start'] + sector['end']) / 2
-        mid_rad = math.radians(mid_angle)
-        r_text = 0.75 # 文字半徑位置
+        x_pts, y_pts = [], []
+        # 【優化】增加採樣點數，讓圓弧超圓滑
+        steps = 100 
+        for i in range(steps + 1):
+            angle = start_angle + (end_angle - start_angle) * (i / steps)
+            x, y = get_xy_from_angle(R_OUTER_LINE, angle)
+            x_pts.append(x)
+            y_pts.append(y)
         
         fig.add_trace(go.Scatter(
-            x=[r_text * math.cos(mid_rad)],
-            y=[r_text * math.sin(mid_rad)],
-            mode='text',
-            text=[sector['label']],
-            textfont=dict(size=18, color=sector['text_color'], weight='bold', family="Arial"),
-            showlegend=False,
-            hoverinfo='skip'
+            x=x_pts, y=y_pts, 
+            mode='lines', 
+            line=dict(color=col, width=10), # 線條稍微加粗一點點
+            hoverinfo='skip', showlegend=False
         ))
 
-    # 4. 繪製指針 (Needle)
-    # 使用三角形：尖端指向 target_angle，底部在圓心
-    needle_len = 0.6  # 指針長度 (不超過外圓)
-    needle_width = 0.08 # 指針底部寬度
-    
-    rad = math.radians(target_angle)
-    # 尖端座標
-    x_tip = needle_len * math.cos(rad)
-    y_tip = needle_len * math.sin(rad)
-    
-    # 底部兩點座標 (垂直於指針方向)
-    x_base_L = needle_width * math.cos(rad - math.pi/2)
-    y_base_L = needle_width * math.sin(rad - math.pi/2)
-    x_base_R = needle_width * math.cos(rad + math.pi/2)
-    y_base_R = needle_width * math.sin(rad + math.pi/2)
+    # 3. 【循環交界】強調分隔線 (Cycle Boundaries)
+    # 在 25, 50, 75 的位置畫上白色的分隔塊，象徵循環的轉換
+    boundary_points = [25, 50, 75]
+    for b_val in boundary_points:
+        b_angle = 180 - (b_val / 100) * 180
+        # 畫一個稍微突出的白色分隔線
+        bx0, by0 = get_xy_from_angle(R_OUTER_LINE - 0.08, b_angle) # 深入一點
+        bx1, by1 = get_xy_from_angle(R_OUTER_LINE + 0.02, b_angle) # 突出一点
+        
+        shapes.append(dict(
+            type="line", x0=bx0, y0=by0, x1=bx1, y1=by1, 
+            line=dict(color='#FFFFFF', width=4), # 白色顯眼粗線
+            layer="above"
+        ))
 
-    # 畫指針本體
-    fig.add_trace(go.Scatter(
-        x=[x_tip, x_base_L, x_base_R, x_tip],
-        y=[y_tip, y_base_L, y_base_R, y_tip],
-        fill='toself',
-        fillcolor='#333333',
-        line=dict(color='#333333', width=1),
-        mode='lines',
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    # 4. 【內層】細緻刻度線
+    for i in range(0, 101, 2): 
+        # 跳過交界處，避免視覺重疊
+        if i in [0, 25, 50, 75, 100]: continue
+        
+        is_major = (i % 10 == 0) # 改為每 10% 一個中刻度
+        r_in = R_TICK_IN_MAJOR if is_major else R_TICK_IN_MINOR
+        
+        # 刻度顏色跟隨區塊
+        if i < 25: t_col = colors['no_wind']
+        elif i < 50: t_col = colors['gust']
+        elif i < 75: t_col = colors['chaos']
+        else: t_col = colors['strong']
+        
+        angle = 180 - (i / 100) * 180
+        x0, y0 = get_xy_from_angle(r_in, angle)
+        x1, y1 = get_xy_from_angle(R_TICK_OUT, angle) # 刻度不連到最外圈，留白更優雅
+        
+        shapes.append(dict(
+            type="line", x0=x0, y0=y0, x1=x1, y1=y1, 
+            line=dict(color=t_col, width=2 if is_major else 1), 
+            layer="above"
+        ))
+
+    # 5. 【文字標籤】U型排列 (位置微調)
+    labels_config = [
+        {"text": "無風", "val": 12.5, "col": colors['no_wind']}, 
+        {"text": "陣風", "val": 37.5, "col": colors['gust']}, 
+        {"text": "亂流", "val": 62.5, "col": colors['chaos']}, 
+        {"text": "強風", "val": 87.5, "col": colors['strong']}
+    ]
     
-    # 畫中心圓點
+    for cfg in labels_config:
+        angle_deg = 180 - (cfg["val"] / 100) * 180
+        lx, ly = get_xy_from_angle(R_LABEL, angle_deg)
+        rot = 90 - angle_deg
+        
+        fig.add_annotation(
+            x=lx, y=ly, text=cfg["text"], showarrow=False,
+            font=dict(size=18, color=cfg["col"], family="Microsoft JhengHei", weight="bold"),
+            textangle=rot, xanchor="center", yanchor="bottom"
+        )
+
+    # 6. 【懸浮指針】
+    ptr_angle = 180 - (score / 100) * 180
+    ptr_rad = math.radians(ptr_angle)
+    # 指針形狀微調，更銳利
+    tri_len, tri_w = 0.14, 0.05 
+    
+    tip_x = R_POINTER * math.cos(ptr_rad) + math.cos(ptr_rad) * (tri_len * 0.6)
+    tip_y = R_POINTER * math.sin(ptr_rad) + math.sin(ptr_rad) * (tri_len * 0.6)
+    base_cx = R_POINTER * math.cos(ptr_rad) - math.cos(ptr_rad) * (tri_len * 0.4)
+    base_cy = R_POINTER * math.sin(ptr_rad) - math.sin(ptr_rad) * (tri_len * 0.4)
+    dx = -math.sin(ptr_rad) * tri_w
+    dy = math.cos(ptr_rad) * tri_w
+    
     fig.add_trace(go.Scatter(
-        x=[0], y=[0], mode='markers',
-        marker=dict(size=25, color='#333333'),
-        showlegend=False,
-        hoverinfo='skip'
+        x=[tip_x, base_cx + dx, base_cx - dx, tip_x],
+        y=[tip_y, base_cy + dy, base_cy - dy, tip_y],
+        fill='toself', fillcolor=curr_color,
+        line=dict(color='#FFFFFF', width=1.5), 
+        mode='lines', showlegend=False, hoverinfo='skip'
     ))
 
-    # 5. 下方文字資訊
-    # 標題
-    fig.add_trace(go.Scatter(
-        x=[0], y=[-0.2],
-        mode='text',
-        text=[clean_status],
-        textfont=dict(size=40, color=current_color, weight='bold', family='Arial Black'),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-    # 持續天數
-    fig.add_trace(go.Scatter(
-        x=[0], y=[-0.45],
-        mode='text',
-        text=[f"已持續 {streak_days} 天"],
-        textfont=dict(size=16, color="#888", family="Arial"),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-
-    # 6. 版面設定 (最關鍵的一步：鎖定長寬比)
-    fig.update_layout(
-        xaxis=dict(range=[-1.1, 1.1], visible=False, fixedrange=True), # X軸範圍
-        yaxis=dict(
-            range=[-0.5, 1.1], # Y軸範圍 (包含下方文字空間)
-            visible=False, 
-            scaleanchor="x",   # 【關鍵】鎖定 Y 軸比例跟隨 X 軸，保證是正圓
-            scaleratio=1,
-            fixedrange=True
-        ),
-        width=None, # 讓 Streamlit 自動決定寬度，但內容比例鎖定
-        height=300, # 設定固定高度
-        margin=dict(l=10, r=10, t=20, b=10),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+    # 7. 【中心資訊】TPEx 櫃買指數
+    t_price = tpex_data.get('price', 0)
+    t_change = tpex_data.get('change', 0)
+    t_pct = tpex_data.get('pct_change', 0)
+    
+    price_color = "#e74c3c" if t_change > 0 else ("#2ecc71" if t_change < 0 else "#FFFFFF")
+    arrow = "▲" if t_change > 0 else ("▼" if t_change < 0 else "-")
+    
+    fig.add_annotation(x=0, y=0.60, text="櫃買指數", showarrow=False, font=dict(size=15, color="#AAAAAA", family="Arial", weight="bold"))
+    
+    # 數值 (已修正 weight 為整數)
+    fig.add_annotation(
+        x=0, y=0.35, 
+        text=f"{t_price:,.2f}", 
+        showarrow=False, 
+        font=dict(size=30, color=price_color, family="Arial Black", weight=900)
+    )
+    
+    fig.add_annotation(
+        x=0, y=0.05,
+        text=f"{arrow} {abs(t_change):.2f} ({abs(t_pct):.2f}%)",
+        showarrow=False,
+        font=dict(size=16, color=price_color, family="Arial", weight="bold")
     )
 
+    # 8. 【底部資訊】
+    fig.add_annotation(
+        x=0, y=-0.15,
+        text=f"今日風度: {clean_status}",
+        showarrow=False,
+        font=dict(size=22, color=curr_color, family="Microsoft JhengHei", weight="bold")
+    )
+    
+    fig.add_annotation(
+        x=0, y=-0.30,
+        text=f"已持續 {streak_days} 天",
+        showarrow=False,
+        font=dict(size=14, color="#888888", family="Microsoft JhengHei")
+    )
+
+    # 9. Layout
+    fig.update_layout(
+        shapes=shapes,
+        xaxis=dict(range=[-1.4, 1.4], visible=False, fixedrange=True),
+        yaxis=dict(range=[-0.5, 1.4], visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
+        paper_bgcolor='#1a1a1a', 
+        plot_bgcolor='#1a1a1a',
+        height=340,
+        margin=dict(t=30, b=10, l=10, r=10),
+        template='plotly_dark'
+    )
+    
     return fig
 
     
@@ -1646,16 +1701,35 @@ def show_dashboard():
     wind_status = day_data['wind']
     wind_streak = calculate_wind_streak(df, selected_date)
     
+# 【新增】獲取即時(或當日)櫃買指數資料，用於儀表板顯示
+    # 這裡我們嘗試從全域快取資料中抓取，如果沒有則使用預設值
+    tpex_info = {'price': 0, 'change': 0, 'pct_change': 0}
+    try:
+        # 使用您已有的 fetch_official_tw_index_data 或是從 get_global_market_data_with_chart 快取中撈
+        # 為了效率，這裡我們直接呼叫一次官方 API (它有快取保護)
+        official_data = fetch_official_tw_index_data()
+        if "^TWOII" in official_data:
+            tpex_info = official_data["^TWOII"]
+        else:
+            # 如果官方 API 沒抓到 (例如盤後很久或維修)，嘗試用 yfinance 補救 (History)
+            pass 
+    except:
+        pass
+
     # 使用 columns 佈局：左邊放儀表板 (寬度 1.3)，右邊放數據卡片 (寬度 2.7)
-    col_gauge, col_cards = st.columns([1.3, 2.7])
+    col_gauge, col_cards = st.columns([1.5, 2.5]) # 稍微加寬左邊給儀表板
     
     with col_gauge:
-        # 呼叫剛剛新增的儀表板函式
-        gauge_fig = plot_wind_gauge(wind_status, wind_streak)
+        # 呼叫新寫的函式：傳入 風度、天數、與 櫃買資料
+        gauge_fig = plot_wind_gauge_tpex_style(wind_status, wind_streak, tpex_info)
+        
+        # 為了美觀，強制使用深色容器包覆 (模擬 Card 效果)
+        st.markdown('<div style="background-color:#1a1a1a; border-radius:15px; padding:10px; box-shadow:0 4px 6px rgba(0,0,0,0.3);">', unsafe_allow_html=True)
         st.plotly_chart(gauge_fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_cards:
-        # 右側保留原本的數據卡片風格，但改為橫向排列
+        # 右側保持原本的數據卡片風格 (不變)
         st.markdown("""
         <style>
             /* 右側卡片專用 Grid */
@@ -1679,7 +1753,7 @@ def show_dashboard():
                 flex-direction: column; 
                 justify-content: center; 
                 align-items: center; 
-                height: 140px; /* 固定高度讓視覺整齊 */
+                height: 140px; 
             }
             .k-label { font-size: 1.1rem; color: #666; font-weight: 600; margin-bottom: 8px; }
             .k-value { font-size: 2.8rem; font-weight: 800; color: #2c3e50; line-height: 1.0; }
@@ -2206,6 +2280,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
