@@ -1704,17 +1704,36 @@ def show_dashboard():
 # 【新增】獲取即時(或當日)櫃買指數資料，用於儀表板顯示
     # 這裡我們嘗試從全域快取資料中抓取，如果沒有則使用預設值
     tpex_info = {'price': 0, 'change': 0, 'pct_change': 0}
+    # 1. 優先嘗試官方 API (Local端最準，但雲端可能被擋)
     try:
-        # 使用您已有的 fetch_official_tw_index_data 或是從 get_global_market_data_with_chart 快取中撈
-        # 為了效率，這裡我們直接呼叫一次官方 API (它有快取保護)
         official_data = fetch_official_tw_index_data()
         if "^TWOII" in official_data:
             tpex_info = official_data["^TWOII"]
-        else:
-            # 如果官方 API 沒抓到 (例如盤後很久或維修)，嘗試用 yfinance 補救 (History)
-            pass 
-    except:
+    except Exception:
         pass
+
+    # 2. 如果官方 API 失敗 (價格仍為 0)，啟動 yfinance 救援 (雲端適用)
+    if tpex_info['price'] == 0:
+        try:
+            # 使用 yfinance 的 fast_info 獲取即時數據
+            yf_ticker = yf.Ticker("^TWOII")
+            fi = yf_ticker.fast_info
+            
+            # 獲取價格
+            last_price = fi.last_price
+            prev_close = fi.previous_close
+            
+            if last_price and prev_close and last_price > 0:
+                change = last_price - prev_close
+                pct_change = (change / prev_close) * 100
+                
+                tpex_info = {
+                    'price': last_price,
+                    'change': change,
+                    'pct_change': pct_change
+                }
+        except Exception as e:
+            print(f"TPEx Fallback Error: {e}")
 
     # 使用 columns 佈局：左邊放儀表板 (寬度 1.3)，右邊放數據卡片 (寬度 2.7)
     col_gauge, col_cards = st.columns([1.5, 2.5]) # 稍微加寬左邊給儀表板
@@ -2280,3 +2299,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
