@@ -497,65 +497,66 @@ def make_sparkline_svg(data_list, color_hex, width=200, height=50):
 from datetime import datetime
 import pytz # 確保有導入時區庫，用於判斷台股日期
 
-# --- [V190 最終手段] 使用 Yahoo Chart API (JSON) 獲取最精準即時報價 ---
-def fetch_tw_index_from_web(ticker):
+# --- [V210 終極版] 串接證交所官方 MIS API 獲取最權威指數資料 ---
+def fetch_official_tw_index_data():
     """
-    不再解析 HTML，直接請求 Yahoo Finance 的 Chart API (JSON 格式)。
-    這是 Yahoo 前端圖表真正的資料來源，數據最即時且包含正確的昨收價。
+    直接請求台灣證券交易所基本市況報導網站 (MIS) 的 API。
+    這是最權威的即時/盤後資料來源，解決第三方 API 資料延遲或錯誤的問題。
+    tse_t00.tw = 加權指數, otc_o00.tw = 櫃買指數
     """
+    api_url = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw|otc_o00.tw&json=1&delay=0"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://mis.twse.com.tw/", # 必要 Header
+        "Accept": "application/json"
+    }
+    
+    results = {}
     try:
-        # Yahoo Chart API 隱藏端點
-        # interval=1m 代表抓取 1 分鐘線，確保 meta data 是最新的
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://finance.yahoo.com/",
-            "Origin": "https://finance.yahoo.com"
-        }
-        
-        # 設定短超時，避免卡住
-        r = requests.get(url, headers=headers, timeout=3)
+        # 加入一個隨機參數避免快取
+        timestamp = int(time.time() * 1000)
+        r = requests.get(f"{api_url}&_={timestamp}", headers=headers, timeout=5)
         
         if r.status_code == 200:
             data = r.json()
-            # 解析 JSON 結構
-            # 路徑: chart -> result -> [0] -> meta
-            meta = data['chart']['result'][0]['meta']
+            if 'msgArray' not in data: return {}
             
-            # 1. 抓取最新價格 (regularMarketPrice)
-            current_price = meta.get('regularMarketPrice')
-            
-            # 2. 抓取昨收價 (chartPreviousClose)
-            prev_close = meta.get('chartPreviousClose')
-            
-            # 雙重確認：如果 API 沒給 regularMarketPrice，嘗試拿最後一筆 Close
-            if current_price is None:
-                quotes = data['chart']['result'][0]['indicators']['quote'][0]
-                if 'close' in quotes and quotes['close']:
-                    # 過濾掉 None 值，取最後一個有效數字
-                    valid_closes = [c for c in quotes['close'] if c is not None]
-                    if valid_closes:
-                        current_price = valid_closes[-1]
+            for item in data['msgArray']:
+                # z = 最近成交價, y = 昨日收盤價, c = 代號, n = 名稱
+                current_price_str = item.get('z', '0')
+                prev_close_str = item.get('y', '0')
+                stock_code = item.get('c', '')
 
-            # 確保數據有效
-            if current_price is not None and prev_close is not None and prev_close > 0:
-                change_val = current_price - prev_close
-                pct_val = (change_val / prev_close) * 100
+                # 確保資料有效且不是試撮階段的 '0'
+                if current_price_str == '-' or prev_close_str == '-' or float(current_price_str) == 0:
+                    continue
+
+                current_price = float(current_price_str)
+                prev_close = float(prev_close_str)
                 
-                return {
-                    "price": float(current_price),
-                    "change": float(change_val),
-                    "pct_change": float(pct_val)
-                }
-                
+                if prev_close > 0:
+                    change = current_price - prev_close
+                    pct_change = (change / prev_close) * 100
+                    
+                    # 對應到我們的內部代號
+                    ticker_key = ""
+                    if stock_code == "t00": ticker_key = "^TWII"
+                    elif stock_code == "o00": ticker_key = "^TWOII"
+                    
+                    if ticker_key:
+                        results[ticker_key] = {
+                            "price": current_price,
+                            "change": change,
+                            "pct_change": pct_change
+                        }
     except Exception as e:
-        print(f"API fetch error for {ticker}: {e}")
-        return None
-    return None
+        print(f"Official TW API error: {e}")
+        
+    return results
 
 
-# --- 全球市場即時報價 (V190: JSON API 核心版) ---
+# --- 全球市場即時報價 (V210: 官方訊號源終極版) ---
 @st.cache_data(ttl=20)
 def get_global_market_data_with_chart():
     try:
@@ -570,67 +571,61 @@ def get_global_market_data_with_chart():
             "ETH-USD": "Ξ 乙太幣"
         }
         market_data = []
+
+        # 【V210 新增】優先一次性抓取台股官方資料
+        tw_official_data = fetch_official_tw_index_data()
         
         for ticker_code, name in indices.items():
             try:
-                stock = yf.Ticker(ticker_code)
-                
-                # --- 1. 準備走勢圖數據 (Sparkline) ---
-                # 使用 yfinance 抓取歷史數據來畫線 (這部分 yfinance 很擅長)
-                is_crypto = "-USD" in ticker_code
-                interval = "15m" if is_crypto else "5m"
-                
-                # 嘗試抓取 1 天內的數據
-                hist_intra = stock.history(period="1d", interval=interval)
-                
-                # 如果資料太少 (例如剛開盤)，改抓 5 天 60分K
-                if hist_intra.empty or len(hist_intra) < 5:
-                    hist_intra = stock.history(period="5d", interval="60m")
-                
-                # 如果還是沒資料，抓 1 個月日線 (最後防線)
-                if hist_intra.empty:
-                    hist_intra = stock.history(period="1mo", interval="1d")
-
-                trend_data = hist_intra['Close'].dropna().tolist()
-
-                # --- 2. 決定價格數據 (Price Source) ---
+                # 1. 初始化變數
                 last_price = None
                 change = 0
                 pct_change = 0
                 
-                # 【優先策略】針對台股，使用我們剛寫的 JSON API (最準)
-                if ticker_code in ["^TWII", "^TWOII"]:
-                    api_data = fetch_tw_index_from_web(ticker_code)
-                    if api_data:
-                        last_price = api_data['price']
-                        change = api_data['change']
-                        pct_change = api_data['pct_change']
+                # 2. 決定價格數據來源 (Price Source)
+                # 【策略 A】台灣指數：直接使用官方 API 結果
+                if ticker_code in ["^TWII", "^TWOII"] and ticker_code in tw_official_data:
+                    data = tw_official_data[ticker_code]
+                    last_price = data['price']
+                    change = data['change']
+                    pct_change = data['pct_change']
                 
-                # 【次要策略】如果 API 失敗 或 是國際指數，使用 yfinance fast_info
+                # 【策略 B】國際指數 或 官方 API 沒抓到：使用 yfinance fast_info
+                stock = yf.Ticker(ticker_code)
                 if last_price is None:
                     try:
                         fi = stock.fast_info
-                        # 檢查 fast_info 是否有數據
                         if fi.last_price is not None and fi.previous_close is not None:
                             last_price = float(fi.last_price)
                             prev_close = float(fi.previous_close)
-                            change = last_price - prev_close
-                            pct_change = (change / prev_close) * 100 if prev_close != 0 else 0
+                            # 簡單防呆，避免昨收為 0
+                            if prev_close > 0:
+                                change = last_price - prev_close
+                                pct_change = (change / prev_close) * 100
                     except: pass
 
-                # 【最後防線】如果上面都失敗，只好用 K 線圖的最後一筆 (可能會導致漲跌為0，但至少有價格)
-                if last_price is None and not hist_intra.empty:
-                    last_price = float(hist_intra.iloc[-1]['Close'])
-                    # 嘗試計算漲跌 (用開盤價當基準)
-                    if len(hist_intra) >= 2:
-                        prev = float(hist_intra.iloc[0]['Open']) 
-                        change = last_price - prev
-                        pct_change = (change / prev) * 100
-
-                # 最終檢查：如果還是沒有價格，就跳過此商品
+                # 3. 準備走勢圖數據 (Trend - Sparkline)
+                # 統一使用 yfinance 抓歷史資料畫圖
+                is_crypto = "-USD" in ticker_code
+                interval = "15m" if is_crypto else "5m"
+                
+                hist_intra = stock.history(period="1d", interval=interval)
+                # 資料不足的補救措施 (例如剛開盤或假日)
+                if hist_intra.empty or len(hist_intra) < 5:
+                    hist_intra = stock.history(period="5d", interval="60m")
+                if hist_intra.empty:
+                    hist_intra = stock.history(period="1mo", interval="1d")
+                
+                trend_data = hist_intra['Close'].dropna().tolist()
+                
+                # 4. 最終防呆
+                # 如果真的完全沒價格，嘗試用走勢圖最後一點 (最後手段)
+                if last_price is None and trend_data:
+                    last_price = trend_data[-1]
+                
                 if last_price is None: continue
 
-                # 3. 顏色與格式化
+                # 5. 格式化輸出
                 color_hex = "#DC2626" if change > 0 else ("#059669" if change < 0 else "#6B7280")
                 
                 market_data.append({
@@ -641,11 +636,13 @@ def get_global_market_data_with_chart():
                     "color_hex": color_hex,
                     "trend": trend_data
                 })
+                
             except Exception as e:
                 print(f"Error processing {ticker_code}: {e}")
                 continue
         return market_data
     except Exception as e:
+        print(f"Global market data fatal error: {e}")
         return []		
 
 # --- 恐懼與貪婪指數 (V154: 結構相容修復版) ---
@@ -712,40 +709,178 @@ def get_cnn_fear_greed_full():
 
 def get_rating_label_cn(score):
     if score is None: return "未知", "#95a5a6"
-    if score < 25: return "極度恐懼", "#e74c3c" # Red
-    elif score < 45: return "恐懼", "#e67e22" # Orange
-    elif score <= 55: return "中立", "#95a5a6" # Gray
-    elif score < 75: return "貪婪", "#2ecc71" # Light Green
-    else: return "極度貪婪", "#27ae60" # Dark Green
+    if score < 25: return "極度恐懼", "#91cf60" # Red
+    elif score < 45: return "恐懼", "#d9ef8b" # Orange
+    elif score <= 55: return "中立", "#fee08b" # Gray
+    elif score < 75: return "貪婪", "#fc8d59" # Light Green
+    else: return "極度貪婪", "#d73027" # Dark Green
 
-def plot_fear_greed_gauge(score):
-    # 【需求1】字體美化並放大
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = score,
-        number = {'font': {'size': 60, 'color': '#2c3e50', 'family': 'Impact'}}, # 放大至 80, 使用 Impact 字體
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "市場情緒指標", 'font': {'size': 18, 'color': '#666', 'weight': 'bold'}},
-        gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#333", 'tickfont': {'size': 14}},
-            'bar': {'color': "#2c3e50", 'thickness': 0.15}, # 指針顏色
-            'bgcolor': "white",
-            'borderwidth': 0,
-            'steps': [
-                {'range': [0, 25], 'color': "#f6b26b"},   # 極度恐懼 (淡紅)
-                {'range': [25, 45], 'color': "#f9cb9c"},  # 恐懼 (橘黃)
-                {'range': [45, 55], 'color': "#eeeeee"},  # 中立 (灰)
-                {'range': [55, 75], 'color': "#b6d7a8"},  # 貪婪 (淡綠)
-                {'range': [75, 100], 'color': "#93c47d"}  # 極度貪婪 (深綠)
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': score
-            }
-        }
+import math
+import plotly.graph_objects as go
+
+# --- [V1000 終極修正版] U形排列 (Cup Arrangement) + 底部對齊圓心 ---
+def plot_fear_greed_gauge_dark(score):
+    # 1. 顏色定義
+    colors = {
+        'extreme_fear': '#91cf60', # 深綠
+        'fear': '#d9ef8b',         # 淺綠
+        'neutral': '#fee08b',      # 黃色
+        'greed': '#fc8d59',        # 橘色
+        'extreme_greed': '#d73027' # 紅色
+    }
+    
+    score = max(0, min(100, score))
+    if score < 25:
+        curr_color, curr_label = colors['extreme_fear'], "極度恐懼"
+    elif score < 45:
+        curr_color, curr_label = colors['fear'], "恐懼"
+    elif score <= 55:
+        curr_color, curr_label = colors['neutral'], "中性"
+    elif score < 75:
+        curr_color, curr_label = colors['greed'], "貪婪"
+    else:
+        curr_color, curr_label = colors['extreme_greed'], "極度貪婪"
+
+    fig = go.Figure()
+
+    # --- 幾何參數 ---
+    R_OUTER_LINE = 1.0   # 外圈實線
+    R_TICK_OUT = 0.96    # 刻度外緣
+    R_TICK_IN_MAJOR = 0.85 # 大刻度內緣
+    R_TICK_IN_MINOR = 0.90 # 小刻度內緣
+    
+    # 文字半徑：設定文字腳底踩的位置
+    R_LABEL = 1.10       
+    
+    R_POINTER = 0.70     # 指針半徑
+    
+    # 輔助：從角度獲取座標
+    def get_xy_from_angle(r, angle_deg):
+        rad = math.radians(angle_deg)
+        return r * math.cos(rad), r * math.sin(rad)
+
+    shapes = []
+    
+    # 2. 【最外層】連續彩色實線
+    segments = [
+        (0, 25, colors['extreme_fear']),
+        (25, 45, colors['fear']),
+        (45, 55, colors['neutral']),
+        (55, 75, colors['greed']),
+        (75, 100, colors['extreme_greed'])
+    ]
+    for start_val, end_val, col in segments:
+        start_angle = 180 - (start_val / 100) * 180
+        end_angle = 180 - (end_val / 100) * 180
+        
+        x_pts, y_pts = [], []
+        steps = 30
+        for i in range(steps + 1):
+            angle = start_angle + (end_angle - start_angle) * (i / steps)
+            x, y = get_xy_from_angle(R_OUTER_LINE, angle)
+            x_pts.append(x)
+            y_pts.append(y)
+        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, mode='lines', line=dict(color=col, width=6), hoverinfo='skip', showlegend=False))
+
+    # 3. 【內層】彩色刻度線
+    for i in range(0, 101, 2):
+        is_major = (i % 10 == 0)
+        r_in = R_TICK_IN_MAJOR if is_major else R_TICK_IN_MINOR
+        
+        if i < 25: t_col = colors['extreme_fear']
+        elif i < 45: t_col = colors['fear']
+        elif i <= 55: t_col = colors['neutral']
+        elif i < 75: t_col = colors['greed']
+        else: t_col = colors['extreme_greed']
+        
+        angle = 180 - (i / 100) * 180
+        x0, y0 = get_xy_from_angle(r_in, angle)
+        x1, y1 = get_xy_from_angle(R_TICK_OUT, angle)
+        
+        shapes.append(dict(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=t_col, width=3 if is_major else 1), layer="above"))
+
+    # 4. 【文字標籤】：U形排列 (相反方向) + 底部對齊
+    labels_config = [
+        {"text": "極度恐懼", "val": 12.5}, 
+        {"text": "恐懼",     "val": 35.0}, 
+        {"text": "中性",     "val": 50.0}, 
+        {"text": "貪婪",     "val": 65.0}, 
+        {"text": "極度貪婪", "val": 87.5}
+    ]
+    
+    for cfg in labels_config:
+        txt = cfg["text"]
+        val = cfg["val"]
+        
+        # 1. 計算中心角度
+        angle_deg = 180 - (val / 100) * 180
+        
+        # 2. 計算座標 (腳底位置)
+        lx, ly = get_xy_from_angle(R_LABEL, angle_deg)
+        
+        # 3. 【核心修正】計算旋轉 (Rotation)
+        # 使用反向公式：90 - angle
+        # 左邊呈現 \，右邊呈現 /，形成 U 形
+        rot = 90 - angle_deg
+        
+        # 4. 繪製
+        fig.add_annotation(
+            x=lx, y=ly,
+            text=txt,
+            showarrow=False,
+            font=dict(size=16, color="#E0E0E0", family="Microsoft JhengHei", weight="bold"),
+            textangle=rot,      # 應用新的旋轉角度
+            xanchor="center",   # 左右置中
+            yanchor="bottom"    # 底部對齊：確保文字"站"在半徑線上
+        )
+
+    # 5. 【懸浮指針】
+    ptr_angle = 180 - (score / 100) * 180
+    ptr_rad = math.radians(ptr_angle)
+    tri_len, tri_w = 0.12, 0.04
+    
+    tip_x = R_POINTER * math.cos(ptr_rad) + math.cos(ptr_rad) * (tri_len * 0.6)
+    tip_y = R_POINTER * math.sin(ptr_rad) + math.sin(ptr_rad) * (tri_len * 0.6)
+    base_cx = R_POINTER * math.cos(ptr_rad) - math.cos(ptr_rad) * (tri_len * 0.4)
+    base_cy = R_POINTER * math.sin(ptr_rad) - math.sin(ptr_rad) * (tri_len * 0.4)
+    dx = -math.sin(ptr_rad) * tri_w
+    dy = math.cos(ptr_rad) * tri_w
+    
+    fig.add_trace(go.Scatter(
+        x=[tip_x, base_cx + dx, base_cx - dx, tip_x],
+        y=[tip_y, base_cy + dy, base_cy - dy, tip_y],
+        fill='toself', fillcolor=curr_color,
+        line=dict(color=curr_color, width=1),
+        mode='lines', showlegend=False, hoverinfo='skip'
     ))
-    fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'family': "Arial"})
+
+    # 6. 【中心數字與狀態】
+    fig.add_annotation(
+        x=0, y=0.25,
+        text=f"{score}",
+        showarrow=False,
+        font=dict(size=36, color=curr_color, family="Arial Black", weight=900)
+    )
+    
+    fig.add_annotation(
+        x=0, y=-0.05,
+        text=f"{curr_label}",
+        showarrow=False,
+        font=dict(size=24, color="#FFFFFF", family="Microsoft JhengHei", weight=700)
+    )
+
+    # 7. 版面設定
+    fig.update_layout(
+        shapes=shapes,
+        xaxis=dict(range=[-1.4, 1.4], visible=False, fixedrange=True),
+        yaxis=dict(range=[-0.3, 1.4], visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
+        paper_bgcolor='#1a1a1a', 
+        plot_bgcolor='#1a1a1a',
+        height=320,
+        margin=dict(t=30, b=10, l=10, r=10),
+        template='plotly_dark'
+    )
+    
     return fig
 
 import textwrap # 務必確認有匯入這個標準函式庫
@@ -864,13 +999,27 @@ def render_global_markets():
     if fg_data and "error" in fg_data:
         st.warning(f"⚠️ 無法取得 CNN 即時數據 (原因: {fg_data['error']})。可能是因為雲端主機 IP 被新聞網站防火牆阻擋。建議稍後再試。")
     elif fg_data:
-        c1, c2 = st.columns([1, 1])
+
+	# 使用 columns 佈局
+        c1, c2 = st.columns([1.5, 2.5]) # 左邊寬一點給儀表板
         
         # 左側：儀表板
         with c1:
-            st.plotly_chart(plot_fear_greed_gauge(fg_data['score']), use_container_width=True)
-            lbl, color = get_rating_label_cn(fg_data['score'])
-            st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:1.5rem; color:{color};'>{lbl}</div>", unsafe_allow_html=True)
+            # 🟩===【請貼上這段新程式碼】===🟩
+            gauge_fig = plot_fear_greed_gauge_dark(fg_data['score'])
+            
+            # 【關鍵修正】直接設定一個深色卡片容器，確保背景是黑的
+            # 這樣白色的文字和刻度線才看得到
+            
+            # 畫圖
+            st.plotly_chart(gauge_fig, use_container_width=True, config={'displayModeBar': False})
+            
+            # 閉合 DIV
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        # 右側：歷史數據表 (保持原樣，或稍微美化)
+            
+            # 🟩===========================🟩
             
         # 右側：歷史數據表
         with c2:
@@ -2057,5 +2206,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
