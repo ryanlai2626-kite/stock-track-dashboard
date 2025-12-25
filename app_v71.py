@@ -2025,7 +2025,7 @@ def show_dashboard():
     # --- 接續原本的程式碼 ---
     
 # --- V196: 每日風度與風箏數 (圖形化修正版) ---
-    st.markdown("### 🌬️ 每日風度與風箏數")
+    st.markdown("### 🌬️ 風度儀表板與風箏數")
 
     wind_status = day_data['wind']
     wind_streak = calculate_wind_streak(df, selected_date)
@@ -2667,3 +2667,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
