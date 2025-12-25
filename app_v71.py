@@ -1407,7 +1407,7 @@ def plot_wind_gauge_bias_driven(
     
     # 定義指針顏色 (固定顏色以利區分)
     COLOR_TAIEX_PTR = "#29B6F6"  # 淺藍色 (加權)
-    COLOR_TPEX_PTR  = "#fc8d59"  # 黃色 (櫃買)
+    COLOR_TPEX_PTR  = "#FFFF77"  # 黃色 (櫃買)
 
     # --- 內部函式：計算指針分數 ---
     def calc_score(bias_rate, streak_days):
