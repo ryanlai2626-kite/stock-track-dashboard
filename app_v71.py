@@ -164,7 +164,15 @@ if GOOGLE_API_KEY:
 
 DB_FILE = 'stock_data_v74.csv' 
 BACKUP_FILE = 'stock_data_backup.csv'
-HISTORY_FILE = 'kite_history.csv' # 新增歷史檔名常數
+
+# ▼▼▼▼▼▼ 請確保補上這兩行 ▼▼▼▼▼▼
+HISTORY_FILE_TPEX = 'kite_history.csv'       # 原本的櫃買歷史檔
+HISTORY_FILE_TAIEX = 'kite_history_taiex.csv' # 新增的加權歷史檔
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲HISTORY_FILE_TAIEX = 'kite_history_taiex.csv' # 新增的加權歷史檔
+
+# ▼▼▼▼▼▼ 請補上這一行 (為了相容舊程式碼) ▼▼▼▼▼▼
+HISTORY_FILE = HISTORY_FILE_TPEX 
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 # --- 3. 核心資料庫 (MASTER_STOCK_DB) ---
 MASTER_STOCK_DB = {
@@ -225,7 +233,7 @@ MASTER_STOCK_DB = {
     "4961": ("天鈺", "IC設計"), "6279": ("胡連", "車用連接器"), "3693": ("營邦", "機殼"), 
     "8210": ("勤誠", "機殼"), "3558": ("神準", "網通"), "6180": ("橘子", "遊戲"), 
     "6515": ("穎崴", "測試介面"), "6182": ("合晶", "矽晶圓"), "8086": ("宏捷科", "砷化鎵"), 
-    "5284": ("JPP-KY", "航太/機殼"), "6895": ("宏碩系統", "微波設備"), "8054": ("安國", "IP矽智財"),
+    "5284": ("JPP-KY", "航太/機殼"), "6895": ("宏碩系統", "微波設備"),  "8054": ("安國", "IP矽智財"),
     "6739": ("竹陞科技", "智能工廠"), "4971": ("IET-KY", "三五族/砷化鎵"), "9105": ("泰金寶-DR", "組裝代工")
 }
 
@@ -718,7 +726,7 @@ def get_rating_label_cn(score):
 import math
 import plotly.graph_objects as go
 
-# --- [V1000 終極修正版] U形排列 (Cup Arrangement) + 底部對齊圓心 ---
+# --- [V1000 終極修正版] 恐懼貪婪儀表板 (已移除中間的 \ 線條) ---
 def plot_fear_greed_gauge_dark(score):
     # 1. 顏色定義
     colors = {
@@ -748,13 +756,9 @@ def plot_fear_greed_gauge_dark(score):
     R_TICK_OUT = 0.96    # 刻度外緣
     R_TICK_IN_MAJOR = 0.85 # 大刻度內緣
     R_TICK_IN_MINOR = 0.90 # 小刻度內緣
-    
-    # 文字半徑：設定文字腳底踩的位置
-    R_LABEL = 1.10       
-    
+    R_LABEL = 1.10       # 文字半徑
     R_POINTER = 0.70     # 指針半徑
     
-    # 輔助：從角度獲取座標
     def get_xy_from_angle(r, angle_deg):
         rad = math.radians(angle_deg)
         return r * math.cos(rad), r * math.sin(rad)
@@ -799,39 +803,26 @@ def plot_fear_greed_gauge_dark(score):
         
         shapes.append(dict(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=t_col, width=3 if is_major else 1), layer="above"))
 
-    # 4. 【文字標籤】：U形排列 (相反方向) + 底部對齊
+    # 4. 【文字標籤】
     labels_config = [
         {"text": "極度恐懼", "val": 12.5}, 
-        {"text": "恐懼",     "val": 35.0}, 
-        {"text": "中性",     "val": 50.0}, 
-        {"text": "貪婪",     "val": 65.0}, 
+        {"text": "恐懼",      "val": 35.0}, 
+        {"text": "中性",      "val": 50.0}, 
+        {"text": "貪婪",      "val": 65.0}, 
         {"text": "極度貪婪", "val": 87.5}
     ]
     
     for cfg in labels_config:
         txt = cfg["text"]
         val = cfg["val"]
-        
-        # 1. 計算中心角度
         angle_deg = 180 - (val / 100) * 180
-        
-        # 2. 計算座標 (腳底位置)
         lx, ly = get_xy_from_angle(R_LABEL, angle_deg)
-        
-        # 3. 【核心修正】計算旋轉 (Rotation)
-        # 使用反向公式：90 - angle
-        # 左邊呈現 \，右邊呈現 /，形成 U 形
         rot = 90 - angle_deg
         
-        # 4. 繪製
         fig.add_annotation(
-            x=lx, y=ly,
-            text=txt,
-            showarrow=False,
+            x=lx, y=ly, text=txt, showarrow=False,
             font=dict(size=16, color="#E0E0E0", family="Microsoft JhengHei", weight="bold"),
-            textangle=rot,      # 應用新的旋轉角度
-            xanchor="center",   # 左右置中
-            yanchor="bottom"    # 底部對齊：確保文字"站"在半徑線上
+            textangle=rot, xanchor="center", yanchor="bottom"
         )
 
     # 5. 【懸浮指針】
@@ -856,24 +847,39 @@ def plot_fear_greed_gauge_dark(score):
 
     # 6. 【中心數字與狀態】
     fig.add_annotation(
-        x=0, y=0.25,
-        text=f"{score}",
-        showarrow=False,
+        x=0, y=0.25, text=f"{score}", showarrow=False,
         font=dict(size=36, color=curr_color, family="Arial Black", weight=900)
     )
-    
     fig.add_annotation(
-        x=0, y=-0.05,
-        text=f"{curr_label}",
-        showarrow=False,
+        x=0, y=-0.05, text=f"{curr_label}", showarrow=False,
         font=dict(size=24, color="#FFFFFF", family="Microsoft JhengHei", weight=700)
     )
 
-    # 7. 版面設定
+    # 7. 版面設定 (這裡是最重要的修改：隱藏歸零線)
     fig.update_layout(
         shapes=shapes,
-        xaxis=dict(range=[-1.4, 1.4], visible=False, fixedrange=True),
-        yaxis=dict(range=[-0.3, 1.4], visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
+        xaxis=dict(
+            range=[-1.4, 1.4], 
+            visible=False, 
+            showgrid=False, 
+            zeroline=False, 
+            showline=False, 
+            zerolinewidth=0, 
+            zerolinecolor='rgba(0,0,0,0)', # 透明化
+            fixedrange=True
+        ),
+        yaxis=dict(
+            range=[-0.3, 1.4], 
+            visible=False, 
+            showgrid=False, 
+            zeroline=False, 
+            showline=False,
+            zerolinewidth=0,
+            zerolinecolor='rgba(0,0,0,0)', # 透明化
+            scaleanchor="x", 
+            scaleratio=1, 
+            fixedrange=True
+        ),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
         height=320,
@@ -1273,10 +1279,11 @@ def load_db():
     return pd.DataFrame()
 
 # V158: 新增歷史資料讀取函數
-def load_history_data():
-    if os.path.exists(HISTORY_FILE):
+# --- 【修改】加入 file_path 參數，預設為櫃買 ---
+def load_history_data(file_path=HISTORY_FILE_TPEX):
+    if os.path.exists(file_path):
         try:
-            df = pd.read_csv(HISTORY_FILE)
+            df = pd.read_csv(file_path)
             # 簡單檢查欄位
             if '日期' in df.columns and '風度' in df.columns:
                 # 處理日期格式 YYYY.MM.DD
@@ -1284,7 +1291,7 @@ def load_history_data():
                 df = df.dropna(subset=['日期']).sort_values('日期')
                 return df
         except Exception as e:
-            print(f"Load History Error: {e}")
+            print(f"Load History Error ({file_path}): {e}")
     return pd.DataFrame()
 
 def save_batch_data(records_list):
@@ -1370,215 +1377,226 @@ def calculate_monthly_stats(df):
 import math
 import plotly.graph_objects as go
 
-# --- [V2.1] 風度儀表板 (極致圓滑 + 循環交界強化版) ---
-def plot_wind_gauge_tpex_style(wind_status, streak_days, tpex_data):
+# --- [V4.0] 風度儀表板 (雙指針: 加權 vs 櫃買) ---
+def plot_wind_gauge_bias_driven(
+    taiex_wind, taiex_streak, taiex_bias,
+    tpex_wind, tpex_streak, tpex_bias,
+    taiex_data, tpex_data
+):
     """
-    wind_status: str, e.g., "強風", "無風"
-    streak_days: int
-    tpex_data: dict, e.g., {'price': 265.5, 'change': 1.2, 'pct_change': 0.45}
+    雙指針風度儀表板
+    參數:
+    taiex_*: 加權指數的 風度(str), 持續天數(int), 乖離率(float)
+    tpex_*:  櫃買指數的 風度(str), 持續天數(int), 乖離率(float)
+    *_data:  即時報價資料 dict {'price', 'change', 'pct_change'}
     """
-    # 1. 定義顏色
-    colors = {
-        'no_wind': '#2ecc71',   # 無風 (綠)
-        'gust': '#f1c40f',      # 陣風 (黃)
-        'chaos': '#9b59b6',     # 亂流 (紫)
-        'strong': '#e74c3c'     # 強風 (紅)
-    }
     
-    # 決定指針位置
-    clean_status = str(wind_status).strip()
-    score = 0
-    curr_color = '#95a5a6'
+    # 1. 基礎配置 (7 格設計)
+    BLOCK_COUNT = 7
+    BLOCK_WIDTH = 100 / BLOCK_COUNT
     
-    if clean_status == '無風':
-        score = 12.5; curr_color = colors['no_wind']
-    elif clean_status == '陣風':
-        score = 37.5; curr_color = colors['gust']
-    elif clean_status == '亂流':
-        score = 62.5; curr_color = colors['chaos']
-    elif clean_status == '強風':
-        score = 87.5; curr_color = colors['strong']
-    else:
-        score = 50 
+    # 配色 (背景光暈)
+    grad_green = ['#00E676', '#0B5345']       
+    grad_gray  = ['#2C3E50', '#78909c', '#BDC3C7'] 
+    grad_red   = ['#922B21', '#FF2D00']       
+    block_colors_final = grad_green + grad_gray + grad_red
+
+    c_green_base = '#00E676' 
+    c_gray_base  = '#BDC3C7'
+    c_red_base   = '#FF2D00'
     
+    # 定義指針顏色 (固定顏色以利區分)
+    COLOR_TAIEX_PTR = "#29B6F6"  # 淺藍色 (加權)
+    COLOR_TPEX_PTR  = "#fc8d59"  # 黃色 (櫃買)
+
+    # --- 內部函式：計算指針分數 ---
+    def calc_score(bias_rate, streak_days):
+        # 邏輯: 根據乖離率決定區塊，根據天數決定區塊內進度
+        target_block = 0
+        if bias_rate < -3.0:            target_block = 0
+        elif -3.0 <= bias_rate < -2.0:  target_block = 1
+        elif -2.0 <= bias_rate < -1.0:   target_block = 2
+        elif -1.0 <= bias_rate < 1.0:    target_block = 3
+        elif 1.0 <= bias_rate <= 2.0:   target_block = 4
+        elif 2.0 < bias_rate <= 3.5:    target_block = 5
+        else:                           target_block = 6 # > 3.5
+        
+        base_score = target_block * BLOCK_WIDTH
+        capped_days = min(streak_days, 10) # 每一格代表10天
+        days_offset = (capped_days / 10.0) * BLOCK_WIDTH
+        
+        score = base_score + days_offset
+        return max(0, min(100, score)) # 限制在 0-100
+
+    score_taiex = calc_score(taiex_bias, taiex_streak)
+    score_tpex  = calc_score(tpex_bias, tpex_streak)
+
+    # --- 繪圖開始 ---
     fig = go.Figure()
 
-    # --- 幾何參數 ---
-    R_OUTER_LINE = 1.01     
-    R_TICK_OUT = 0.95      
-    R_TICK_IN_MAJOR = 0.86 # 大刻度稍微短一點，更精緻
-    R_TICK_IN_MINOR = 0.92 
-    R_LABEL = 1.18         # 文字稍微往外推一點
-    R_POINTER = 0.70       
-
+    # 幾何參數
+    R_OUTER_RING = 1.08    
+    R_MAIN_ARC = 1.00      
+    R_TICK_IN = 0.88       
+    R_CURSOR_TIP = 0.86    
+    R_CURSOR_BASE = 0.74   
+    R_LABEL = 1.30         
+    
     def get_xy_from_angle(r, angle_deg):
         rad = math.radians(angle_deg)
         return r * math.cos(rad), r * math.sin(rad)
 
     shapes = []
-    
-    # 2. 【最外層】四個風度區塊 (高解析度圓滑版)
-    # 為了讓線條圓滑，steps 設為 100
-    segments = [
-        (0, 25, colors['no_wind']),
-        (25, 50, colors['gust']),
-        (50, 75, colors['chaos']),
-        (75, 100, colors['strong'])
-    ]
-    
-    for start_val, end_val, col in segments:
-        start_angle = 180 - (start_val / 100) * 180
-        end_angle = 180 - (end_val / 100) * 180
+
+    # 2. 外環與主色塊 (背景)
+    # 外環
+    ring_x, ring_y = [], []
+    for s in range(181):
+        rx, ry = get_xy_from_angle(R_OUTER_RING, 180 - s)
+        ring_x.append(rx); ring_y.append(ry)
+    fig.add_trace(go.Scatter(x=ring_x, y=ring_y, mode='lines', line=dict(color='#444444', width=1), hoverinfo='skip', showlegend=False))
+
+    # 色塊 (光暈 + 實體)
+    for i in range(BLOCK_COUNT):
+        start_pct = i * BLOCK_WIDTH
+        end_pct = (i + 1) * BLOCK_WIDTH
+        gap = 0.6 
+        start_angle = 180 - (start_pct / 100 * 180) - (0 if i==0 else gap)
+        end_angle = 180 - (end_pct / 100 * 180) + (0 if i==BLOCK_COUNT-1 else gap)
         
         x_pts, y_pts = [], []
-        # 【優化】增加採樣點數，讓圓弧超圓滑
-        steps = 100 
-        for i in range(steps + 1):
-            angle = start_angle + (end_angle - start_angle) * (i / steps)
-            x, y = get_xy_from_angle(R_OUTER_LINE, angle)
-            x_pts.append(x)
-            y_pts.append(y)
+        steps = 15
+        for s in range(steps + 1):
+            ang = start_angle + (end_angle - start_angle) * (s / steps)
+            x, y = get_xy_from_angle(R_MAIN_ARC, ang)
+            x_pts.append(x); y_pts.append(y)
         
-        fig.add_trace(go.Scatter(
-            x=x_pts, y=y_pts, 
-            mode='lines', 
-            line=dict(color=col, width=7), # 線條稍微加粗一點點
-            hoverinfo='skip', showlegend=False
-        ))
+        curr_color = block_colors_final[i]
+        # 光暈
+        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, mode='lines', line=dict(color=curr_color, width=18), opacity=0.25, hoverinfo='skip', showlegend=False))
+        # 實體
+        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, mode='lines', line=dict(color=curr_color, width=6), opacity=1.0, hoverinfo='skip', showlegend=False))
 
-    # 3. 【循環交界】強調分隔線 (Cycle Boundaries)
-    # 在 25, 50, 75 的位置畫上白色的分隔塊，象徵循環的轉換
-    boundary_points = [25, 50, 75]
-    for b_val in boundary_points:
-        b_angle = 180 - (b_val / 100) * 180
-        # 畫一個稍微突出的白色分隔線
-        bx0, by0 = get_xy_from_angle(R_OUTER_LINE - 0.08, b_angle) # 深入一點
-        bx1, by1 = get_xy_from_angle(R_OUTER_LINE + 0.02, b_angle) # 突出一点
-        
-        shapes.append(dict(
-            type="line", x0=bx0, y0=by0, x1=bx1, y1=by1, 
-            line=dict(color='#FFFFFF', width=4), # 白色顯眼粗線
-            layer="above"
-        ))
+    # 3. 刻度
+    TOTAL_TICKS = BLOCK_COUNT * 10
+    for d in range(TOTAL_TICKS + 1):
+        is_block_edge = (d % 10 == 0)
+        if not is_block_edge and d % 2 != 0: continue 
 
-    # 4. 【內層】細緻刻度線
-    for i in range(0, 101, 2): 
-        # 跳過交界處，避免視覺重疊
-        if i in [0, 25, 50, 75, 100]: continue
+        tick_pct = (d / TOTAL_TICKS) * 100
+        angle = 180 - (tick_pct / 100) * 180
+        block_idx = min(d // 10, BLOCK_COUNT - 1)
+        t_col = block_colors_final[block_idx]
         
-        is_major = (i % 10 == 0) # 改為每 10% 一個中刻度
-        r_in = R_TICK_IN_MAJOR if is_major else R_TICK_IN_MINOR
-        
-        # 刻度顏色跟隨區塊
-        if i < 25: t_col = colors['no_wind']
-        elif i < 50: t_col = colors['gust']
-        elif i < 75: t_col = colors['chaos']
-        else: t_col = colors['strong']
-        
-        angle = 180 - (i / 100) * 180
+        if is_block_edge:
+            r_in = R_TICK_IN - 0.02; w = 2; alpha = 1.0; col = '#FFFFFF'
+        else:
+            r_in = R_TICK_IN; w = 1; alpha = 0.5; col = t_col
+
         x0, y0 = get_xy_from_angle(r_in, angle)
-        x1, y1 = get_xy_from_angle(R_TICK_OUT, angle) # 刻度不連到最外圈，留白更優雅
-        
-        shapes.append(dict(
-            type="line", x0=x0, y0=y0, x1=x1, y1=y1, 
-            line=dict(color=t_col, width=2 if is_major else 1), 
-            layer="above"
-        ))
+        x1, y1 = get_xy_from_angle(0.96, angle)
+        shapes.append(dict(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=col, width=w), opacity=alpha, layer="below"))
 
-    # 5. 【文字標籤】U型排列 (位置微調)
-    labels_config = [
-        {"text": "無風", "val": 12.5, "col": colors['no_wind']}, 
-        {"text": "陣風", "val": 37.5, "col": colors['gust']}, 
-        {"text": "亂流", "val": 62.5, "col": colors['chaos']}, 
-        {"text": "強風", "val": 87.5, "col": colors['strong']}
-    ]
-    
-    for cfg in labels_config:
-        angle_deg = 180 - (cfg["val"] / 100) * 180
-        lx, ly = get_xy_from_angle(R_LABEL, angle_deg)
-        rot = 90 - angle_deg
+    # 4. 文字標籤 (旋轉)
+    def add_curved_label(txt, pct, color):
+        angle = 180 - (pct / 100) * 180
+        lx, ly = get_xy_from_angle(R_LABEL, angle)
+        rot_angle = 90 - angle
+        fig.add_annotation(x=lx, y=ly, text=txt, showarrow=False, font=dict(size=18, color=color, family="Arial", weight="bold"), textangle=rot_angle)
+
+    add_curved_label("無風 / 陣風循環", 15, c_green_base)
+    add_curved_label("循環的交界", 50, c_gray_base)
+    add_curved_label("強風 / 亂流循環", 85, c_red_base)
+
+    # 5. 【重點】繪製雙指針 (Dual Pointers)
+    def draw_pointer(score, color, label):
+        ptr_angle = 180 - (score / 100) * 180
+        rad = math.radians(ptr_angle)
         
+        # 調整指針形狀 (稍微寬一點點)
+        tri_w = 0.07 
+        tip_x, tip_y = R_CURSOR_TIP * math.cos(rad), R_CURSOR_TIP * math.sin(rad)
+        base_x, base_y = R_CURSOR_BASE * math.cos(rad), R_CURSOR_BASE * math.sin(rad)
+        
+        # 計算底部兩點
+        dx, dy = -math.sin(rad) * tri_w, math.cos(rad) * tri_w
+        
+        # 繪製三角形
+        fig.add_trace(go.Scatter(
+            x=[tip_x, base_x + dx, base_x - dx, tip_x],
+            y=[tip_y, base_y + dy, base_y - dy, tip_y],
+            fill='toself', fillcolor=color,
+            line=dict(color='#FFFFFF', width=1.5), # 白邊
+            mode='lines', name=label, showlegend=False, hoverinfo='skip'
+        ))
+        
+    # 畫櫃買指針 (先畫，可能被加權蓋住或反之，視需求)
+    draw_pointer(score_tpex, COLOR_TPEX_PTR, "櫃買")
+    # 畫加權指針
+    draw_pointer(score_taiex, COLOR_TAIEX_PTR, "加權")
+
+    # --- 6. 中心資訊：雙指數數據 ---
+    
+    # 分隔線
+    shapes.append(dict(type="line", x0=0, y0=0.15, x1=0, y1=0.55, line=dict(color="#333333", width=1, dash="dot"), layer="below"))
+
+    def draw_market_info(x_center, title, data_dict, ptr_color):
+        price = data_dict.get('price', 0)
+        change = data_dict.get('change', 0)
+        pct = data_dict.get('pct_change', 0)
+        
+        p_color = "#FF2D00" if change > 0 else ("#00E676" if change < 0 else "#FFFFFF")
+        arrow = "▲" if change > 0 else ("▼" if change < 0 else "")
+        
+        # 標題 (帶有指針顏色的小點，方便對照)
         fig.add_annotation(
-            x=lx, y=ly, text=cfg["text"], showarrow=False,
-            font=dict(size=18, color=cfg["col"], family="Microsoft JhengHei", weight="bold"),
-            textangle=rot, xanchor="center", yanchor="bottom"
+            x=x_center, y=0.40, 
+            text=f"● {title}", showarrow=False, 
+            font=dict(size=14, color=ptr_color, weight="bold")
+        )
+        fig.add_annotation(
+            x=x_center, y=0.24, 
+            text=f"{price:,.0f}" if price > 1000 else f"{price:,.2f}", 
+            showarrow=False, 
+            font=dict(size=22, color=p_color, family="Arial Black")
+        )
+        fig.add_annotation(
+            x=x_center, y=0.10, 
+            text=f"{arrow} {abs(change):.2f} ({abs(pct):.2f}%)", 
+            showarrow=False, 
+            font=dict(size=14, color=p_color, weight="bold")
         )
 
-    # 6. 【懸浮指針】
-    ptr_angle = 180 - (score / 100) * 180
-    ptr_rad = math.radians(ptr_angle)
-    # 指針形狀微調，更銳利
-    tri_len, tri_w = 0.14, 0.05 
-    
-    tip_x = R_POINTER * math.cos(ptr_rad) + math.cos(ptr_rad) * (tri_len * 0.6)
-    tip_y = R_POINTER * math.sin(ptr_rad) + math.sin(ptr_rad) * (tri_len * 0.6)
-    base_cx = R_POINTER * math.cos(ptr_rad) - math.cos(ptr_rad) * (tri_len * 0.4)
-    base_cy = R_POINTER * math.sin(ptr_rad) - math.sin(ptr_rad) * (tri_len * 0.4)
-    dx = -math.sin(ptr_rad) * tri_w
-    dy = math.cos(ptr_rad) * tri_w
-    
-    fig.add_trace(go.Scatter(
-        x=[tip_x, base_cx + dx, base_cx - dx, tip_x],
-        y=[tip_y, base_cy + dy, base_cy - dy, tip_y],
-        fill='toself', fillcolor=curr_color,
-        line=dict(color='#FFFFFF', width=1.5), 
-        mode='lines', showlegend=False, hoverinfo='skip'
-    ))
+    # 左：加權
+    draw_market_info(-0.40, "加權指數", taiex_data, COLOR_TAIEX_PTR)
+    # 右：櫃買
+    draw_market_info(0.40, "櫃買指數", tpex_data, COLOR_TPEX_PTR)
 
-    # 7. 【中心資訊】TPEx 櫃買指數
-    t_price = tpex_data.get('price', 0)
-    t_change = tpex_data.get('change', 0)
-    t_pct = tpex_data.get('pct_change', 0)
+    # --- 7. 底部資訊：雙欄位狀態 ---
     
-    price_color = "#e74c3c" if t_change > 0 else ("#2ecc71" if t_change < 0 else "#FFFFFF")
-    arrow = "▲" if t_change > 0 else ("▼" if t_change < 0 else "-")
-    
-    fig.add_annotation(x=0, y=0.60, text="櫃買指數", showarrow=False, font=dict(size=15, color="#AAAAAA", family="Arial", weight="bold"))
-    
-    # 數值 (已修正 weight 為整數)
-    fig.add_annotation(
-        x=0, y=0.35, 
-        text=f"{t_price:,.2f}", 
-        showarrow=False, 
-        font=dict(size=30, color=price_color, family="Arial Black", weight=900)
-    )
-    
-    fig.add_annotation(
-        x=0, y=0.05,
-        text=f"{arrow} {abs(t_change):.2f} ({abs(t_pct):.2f}%)",
-        showarrow=False,
-        font=dict(size=16, color=price_color, family="Arial", weight="bold")
-    )
+    # 左下：加權狀態
+    fig.add_annotation(x=-0.45, y=-0.05, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=20, color=COLOR_TAIEX_PTR, weight="bold"))
+    fig.add_annotation(x=-0.45, y=-0.20, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=14, color="#AAAAAA"))
+    #fig.add_annotation(x=-0.45, y=-0.35, text=f"乖離 {taiex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
 
-    # 8. 【底部資訊】
-    fig.add_annotation(
-        x=0, y=-0.15,
-        text=f"今日風度: {clean_status}",
-        showarrow=False,
-        font=dict(size=22, color=curr_color, family="Microsoft JhengHei", weight="bold")
-    )
-    
-    fig.add_annotation(
-        x=0, y=-0.35,
-        text=f"已持續 {streak_days} 天",
-        showarrow=False,
-        font=dict(size=14, color="#888888", family="Microsoft JhengHei")
-    )
+    # 右下：櫃買狀態
+    fig.add_annotation(x=0.45, y=-0.05, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=20, color=COLOR_TPEX_PTR, weight="bold"))
+    fig.add_annotation(x=0.45, y=-0.20, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=14, color="#AAAAAA"))
+    #fig.add_annotation(x=0.45, y=-0.35, text=f"乖離 {tpex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
 
-    # 9. Layout
+    # 10. Layout
     fig.update_layout(
         shapes=shapes,
-        xaxis=dict(range=[-1.4, 1.4], visible=False, fixedrange=True),
+        xaxis=dict(range=[-1.5, 1.5], visible=False, fixedrange=True),
         yaxis=dict(range=[-0.5, 1.4], visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
-        paper_bgcolor='#1a1a1a', 
-        plot_bgcolor='#1a1a1a',
-        height=340,
-        margin=dict(t=30, b=10, l=10, r=10),
+        paper_bgcolor='#0F0F0F',
+        plot_bgcolor='#0F0F0F',
+        height=380,
+        margin=dict(t=20, b=20, l=10, r=10),
         template='plotly_dark'
     )
     
     return fig
-
     
 # --- AI 分析函式 ---
 def ai_analyze_v86(image):
@@ -1671,6 +1689,259 @@ def get_tpex_robust():
         print(f"TPEx Fallback Error: {e}")
 
     return tpex_data
+
+# ---計算指定月份的個股平均成交值
+
+@st.cache_data(ttl=300)
+def get_monthly_avg_turnover(stock_names, month_str):
+    """
+    計算指定月份的個股平均成交值
+    Args:
+        stock_names: 股票名稱列表 (e.g., ['台積電', '鴻海'])
+        month_str: 月份字串 (e.g., '2024-02')
+    Returns:
+        Dict: { '股票名稱': 平均成交值(億) }
+    """
+    if not stock_names: return {}
+    
+    # 1. 解析日期範圍
+    try:
+        dt = datetime.strptime(month_str, '%Y-%m')
+        start_date = dt.strftime('%Y-%m-%d')
+        # 計算下個月的第一天作為結束日期
+        if dt.month == 12:
+            end_date = datetime(dt.year + 1, 1, 1).strftime('%Y-%m-%d')
+        else:
+            end_date = datetime(dt.year, dt.month + 1, 1).strftime('%Y-%m-%d')
+    except:
+        return {}
+
+    # 2. 轉換名稱為代碼
+    code_map = {} # {code: name}
+    tickers = []
+    unique_names = list(set(stock_names))
+    
+    for name in unique_names:
+        # 假設 smart_get_code_and_sector 已經在您的程式碼中定義
+        code, _, _ = smart_get_code_and_sector(name)
+        if code:
+            tickers.append(f"{code}.TW")
+            tickers.append(f"{code}.TWO")
+            code_map[code] = name # 用代碼反查名稱
+
+    if not tickers: return {}
+
+    # 3. 批次下載歷史資料 (加速)
+    try:
+        data = yf.download(tickers, start=start_date, end=end_date, group_by='ticker', progress=False, threads=True)
+        result = {}
+        
+        for code, name in code_map.items():
+            avg_val = 0
+            # 嘗試上市或上櫃
+            for suffix in ['.TW', '.TWO']:
+                ticker = f"{code}{suffix}"
+                try:
+                    if isinstance(data.columns, pd.MultiIndex) and ticker in data.columns.levels[0]:
+                        df = data[ticker]
+                    elif len(tickers) == 1: # 只有一檔時 yfinance 結構不同
+                        df = data
+                    else:
+                        continue
+
+                    if not df.empty:
+                        # 計算每日成交值 = 收盤價 * 成交量 / 1億
+                        # 處理可能的 NaN
+                        df = df.dropna(subset=['Close', 'Volume'])
+                        if not df.empty:
+                            daily_turnover = (df['Close'] * df['Volume']) / 100000000
+                            avg_val = daily_turnover.mean()
+                            if avg_val > 0: break 
+                except: pass
+            
+            # 儲存結果 (保留一位小數)
+            if avg_val > 0:
+                result[name] = round(avg_val, 1)
+            else:
+                result[name] = 0.0
+                
+        return result
+    except Exception as e:
+        print(f"Error fetching monthly turnover: {e}")
+        return {}
+
+# --- 【新增】共用的循環分析渲染函式 ---
+def render_cycle_analysis_ui(hist_df, index_name="上櫃指數"):
+    """
+    hist_df: 歷史資料 DataFrame
+    index_name: 指數名稱 (用於圖表標題)
+    """
+    if hist_df.empty:
+        st.warning(f"⚠️ 尚無 {index_name} 的歷史資料，請至後台上傳 CSV。")
+        return
+
+    c_ctrl_1, c_ctrl_2 = st.columns([3, 1])
+    with c_ctrl_1:
+        st.caption(f"目前分析對象：**{index_name}**")
+    with c_ctrl_2: 
+        # 使用 unique key 避免元件 ID 衝突
+        leverage = st.number_input("⚖️ 操作槓桿倍數", min_value=0.1, max_value=10.0, value=1.0, step=0.1, key=f"lev_{index_name}")
+    
+    # --- 資料處理 (維持原本邏輯) ---
+    hist_df['日期'] = pd.to_datetime(hist_df['日期'], format='mixed', errors='coerce')
+    hist_df = hist_df.sort_values('日期', ascending=True).reset_index(drop=True)
+    
+    min_date = hist_df['日期'].iloc[0]
+    max_date = hist_df['日期'].iloc[-1] 
+
+    hist_df['wind_clean'] = hist_df['風度'].fillna('').astype(str).str.strip()
+
+    col_20ma = next((c for c in hist_df.columns if '20ma' in c.lower().replace(' ', '')), None)
+    # 若沒有 20MA 欄位則自動計算
+    hist_df['MA20'] = pd.to_numeric(hist_df[col_20ma], errors='coerce') if col_20ma else hist_df['收'].rolling(window=20, min_periods=1).mean()
+    
+    target_col = next((c for c in hist_df.columns if '行情' in c or '方向' in c), None)
+    
+    if target_col:
+        hist_df[target_col] = hist_df[target_col].astype(str).str.strip()
+        def get_cycle_v179(val):
+            if '強風' in val and '亂流' in val: return 'active'
+            if '無風' in val and '陣風' in val: return 'passive'
+            return 'transition'
+        hist_df['cycle'] = hist_df[target_col].apply(get_cycle_v179)
+    else:
+        hist_df['cycle'] = hist_df['wind_clean'].apply(
+            lambda w: 'active' if ('強風' in w or '亂流' in w) and not ('無風' in w or '陣風' in w) else 
+                        ('passive' if ('無風' in w or '陣風' in w) and not ('強風' in w or '亂流' in w) else 'transition')
+        )
+
+    # --- 統計計算 ---
+    d_act = len(hist_df[hist_df['cycle'] == 'active'])
+    d_pass = len(hist_df[hist_df['cycle'] == 'passive'])
+    d_tran = len(hist_df[hist_df['cycle'] == 'transition'])
+    total_days = len(hist_df)
+    
+    p_act = (d_act / total_days * 100) if total_days > 0 else 0
+    p_pass = (d_pass / total_days * 100) if total_days > 0 else 0
+    p_tran = (d_tran / total_days * 100) if total_days > 0 else 0
+
+    cnt_strong = hist_df['wind_clean'].str.contains('強風').sum()
+    cnt_chaos = hist_df['wind_clean'].str.contains('亂流').sum()
+    cnt_calm = hist_df['wind_clean'].str.contains('無風').sum()
+    cnt_gust = hist_df['wind_clean'].str.contains('陣風').sum()
+
+    zones = []
+    cycle_stats = {'active': {'return': []}, 'passive': {'return': []}, 'transition': {'return': []}}
+    
+    curr_start = hist_df.iloc[0]['日期']; curr_price = hist_df.iloc[0]['收']; curr_cycle = hist_df.iloc[0]['cycle']
+    for i in range(1, len(hist_df)):
+        row = hist_df.iloc[i]
+        if row['cycle'] != curr_cycle:
+            end_date = row['日期']; end_price = hist_df.iloc[i-1]['收']
+            ret = ((end_price - curr_price) / curr_price * 100) if curr_price > 0 else 0
+            zones.append({'start': curr_start, 'end': end_date, 'type': curr_cycle})
+            if curr_cycle in cycle_stats: cycle_stats[curr_cycle]['return'].append(ret)
+            curr_start = row['日期']; curr_price = row['收']; curr_cycle = row['cycle']
+    
+    last_end = hist_df.iloc[-1]['日期'] + pd.Timedelta(days=1); last_price = hist_df.iloc[-1]['收']
+    last_ret = ((last_price - curr_price) / curr_price * 100) if curr_price > 0 else 0
+    zones.append({'start': curr_start, 'end': last_end, 'type': curr_cycle})
+    if curr_cycle in cycle_stats: cycle_stats[curr_cycle]['return'].append(last_ret)
+
+    def avg_leveraged(l): base_avg = sum(l)/len(l) if l else 0; return base_avg * leverage
+    r_act = avg_leveraged(cycle_stats['active']['return'])
+    r_pass = avg_leveraged(cycle_stats['passive']['return'])
+    r_tran = avg_leveraged(cycle_stats['transition']['return'])
+    
+    c_act_val = '#e74c3c' if r_act > 0 else '#27ae60'; c_pass_val = '#e74c3c' if r_pass > 0 else '#27ae60'; c_tran_val = '#e74c3c' if r_tran > 0 else ('#27ae60' if r_tran < 0 else '#95a5a6')
+    
+    # --- 顯示卡片 (CSS樣式共用原本的) ---
+    def make_card_html(border_class, title, value_html, sub_text, bar_color=None, bar_pct=0):
+        bar_html = f'<div class="p-bg"><div class="p-fill" style="width:{bar_pct}%; background:{bar_color};"></div></div>' if bar_color else ""
+        return f"""<div class="m-card {border_class}"><div class="mc-lbl">{title}</div><div class="mc-val">{value_html}</div><div class="mc-sub">{sub_text}</div>{bar_html}</div>"""
+    
+    sub_text_suffix = f" (x{leverage})" if leverage != 1.0 else ""
+    
+    val_act = f"{d_act} <span style='font-size:16px; color:#999'>({cnt_strong}/{cnt_chaos})</span> <span style='font-size:12px'>天</span>"
+    c1 = make_card_html("bd-red", "🔴 強風/亂流循環", val_act, f"佔比 {p_act:.0f}%", "#e74c3c", p_act)
+    c2 = make_card_html("bd-red", "🚀 積極績效", f"<span style='color:{c_act_val}'>{r_act:+.2f}%</span>", f"預估報酬{sub_text_suffix}")
+    
+    val_tran = f"{d_tran} <span style='font-size:12px'>天</span>"
+    c3 = make_card_html("bd-yellow", "🟡 循環交界", val_tran, f"佔比 {p_tran:.0f}%", "#f1c40f", p_tran)
+    c4 = make_card_html("bd-yellow", "⚖️ 無方向績效", f"<span style='color:{c_tran_val}'>{r_tran:+.2f}%</span>", f"預估波動{sub_text_suffix}")
+    
+    val_pass = f"{d_pass} <span style='font-size:16px; color:#999'>({cnt_calm}/{cnt_gust})</span> <span style='font-size:12px'>天</span>"
+    c5 = make_card_html("bd-green", "🟢 無風/陣風循環", val_pass, f"佔比 {p_pass:.0f}%", "#2ecc71", p_pass)
+    c6 = make_card_html("bd-green", "🛡️ 保守績效", f"<span style='color:{c_pass_val}'>{r_pass:+.2f}%</span>", f"預估損益{sub_text_suffix}")
+    
+    st.markdown(f'<div class="dashboard-grid-v183">{c1}{c2}{c3}{c4}{c5}{c6}</div>', unsafe_allow_html=True)
+    
+    # --- 繪圖 ---
+    st.caption(f"🌈 線上的顏色代表當日的風度：🔴強風 🟣亂流 🟡陣風 🟢無風 ____實線為 {index_name} ----虛線為 20MA (月線)。")
+    
+    wind_colors_map = {'強風': '#e74c3c', '亂流': '#9b59b6', '陣風': '#f1c40f', '無風': '#2ecc71'}
+    point_colors = [wind_colors_map.get(str(w).strip(), '#999') for w in hist_df['wind_clean']]
+    
+    fig = go.Figure()
+    color_map_cycle = {'active': 'rgba(231, 76, 60, 0.15)', 'passive': 'rgba(46, 204, 113, 0.15)', 'transition': 'rgba(150, 150, 150, 0.2)'}
+    
+    for z in zones: 
+        fig.add_shape(
+            type="rect", 
+            xref="x", yref="paper", 
+            x0=z['start'], x1=z['end'], 
+            y0=0, y1=1, 
+            fillcolor=color_map_cycle.get(z['type'], '#eee'), 
+            opacity=1, layer="below", line_width=0
+        )
+    
+    if '收' in hist_df.columns: 
+        fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='lines', name=index_name, line=dict(color='#34495e', width=1.5, shape='spline', smoothing=1.3)))
+    
+    if 'MA20' in hist_df.columns: 
+        fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['MA20'], mode='lines', name='20MA', line=dict(color='#9b59b6', width=2, dash='dash', shape='spline', smoothing=1.3)))
+    
+    fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='markers', name='每日風度', marker=dict(color=point_colors, size=8.5, line=dict(width=1, color='white'), symbol='circle'), hoverinfo='skip'))
+
+    hover_text = []
+    for idx, row in hist_df.iterrows():
+        raw_dir = row['wind_clean']
+        cycle_zh = {"active":"積極", "passive":"保守", "transition":"無方向"}.get(row['cycle'], "-")
+        hover_text.append(f"<b>{row['日期'].strftime('%Y-%m-%d')}</b><br>收: {row['收']:,.0f}<br>向: {raw_dir}<br>態: {cycle_zh}")
+    fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='markers', name='資訊', marker=dict(size=0, opacity=0), hoverinfo='text', hovertext=hover_text))
+    
+    common_axis_config = dict(
+        showline=True, linewidth=2, linecolor='#333333', gridcolor='#d4d4d4',
+        tickfont=dict(size=14, weight='bold', color='#000000'), 
+        title_font=dict(size=16, weight='bold', color='#000000') 
+    )
+
+    fig.update_layout(
+        title=dict(text=f"📊 {index_name} 循環趨勢圖", font=dict(size=20, color='#000000', weight='bold'), x=0.01, y=0.98), 
+        template="plotly_white", paper_bgcolor='white', plot_bgcolor='white', height=500, 
+        font=dict(family="Arial, sans-serif", color='#000000', size=12), 
+        xaxis=dict(
+            type="date", 
+            range=[min_date, max_date],
+            rangeslider=dict(visible=True, thickness=0.05, bgcolor='#f8f9fa', borderwidth=0), 
+            rangeselector=dict(buttons=list([dict(count=1, label="1M", step="month", stepmode="backward"), dict(count=3, label="3M", step="month", stepmode="backward"), dict(count=6, label="6M", step="month", stepmode="backward"), dict(step="all", label="All")]), bgcolor="#ecf0f1", activecolor="#3498db", font=dict(color="#2c3e50"), x=0, y=1.05),
+            **common_axis_config
+        ), 
+        yaxis=dict(title="", zeroline=False, **common_axis_config),
+        margin=dict(t=80, l=0, r=0, b=40), 
+        legend=dict(
+            orientation="h", 
+            yanchor="bottom", y=1.02, 
+            xanchor="right", x=1, 
+            bgcolor='rgba(255,255,255,0.8)', 
+            bordercolor='#eee', 
+            borderwidth=1, 
+            font=dict(size=12, color='#000000', weight='bold')
+        ), 
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # --- 5. 頁面視圖：戰情儀表板 (前台) [含重新整理按鈕版] ---
 def show_dashboard():
@@ -1794,14 +2065,118 @@ def show_dashboard():
         except Exception as e:
             print(f"TPEx Fallback Error: {e}")
 
-    # 使用 columns 佈局：左邊放儀表板 (寬度 1.3)，右邊放數據卡片 (寬度 2.7)
-    col_gauge, col_cards = st.columns([1.5, 2.5]) # 稍微加寬左邊給儀表板
+# =========== 【請在這邊插入新增的程式碼】 ===========
+    # 目的：抓取加權指數 (TAIEX) 資料
+    try:
+        # ^TWII 是加權指數的代號
+        twii = yf.Ticker("^TWII") 
+        hist = twii.history(period="5d")
+        
+        if not hist.empty:
+            price_now = hist['Close'].iloc[-1]
+            price_prev = hist['Close'].iloc[-2]
+            change = price_now - price_prev
+            pct = (change / price_prev) * 100
+            
+            # 定義 taiex 變數 (這就是缺少的那個！)
+            taiex = {
+                'price': price_now,
+                'change': change,
+                'pct_change': pct
+            }
+        else:
+            taiex = {'price': 0, 'change': 0, 'pct_change': 0}
+            
+    except Exception as e:
+        print(f"加權指數抓取失敗: {e}")
+        taiex = {'price': 0, 'change': 0, 'pct_change': 0}
+    # ====================================================
+
+    # --- 1. 獲取資料 (這裡假設你已經讀取了歷史檔 df_history) ---
+    # 假設最後一筆是最新資料
+
+    hist_df = load_history_data()
+    latest_data = hist_df.iloc[-1] 
+   
+    
+    # 【新增】抓取乖離率
+    # 請注意：你的儀表板邏輯是 2.5 代表 2.5%。
+    # 如果你的資料庫存的是 0.025，請記得 * 100
+    # 【修正點】處理百分比符號
+    try:
+        raw_bias = str(latest_data['乖離率'])
+        # 這裡會把 '2.10%' 變成 2.10
+        current_bias = float(raw_bias.replace('%', '').strip())
+    except ValueError:
+        # 萬一資料是空的或格式完全錯誤，給一個預設值避免程式崩潰
+        current_bias = 0.0
+
+# --- 1. 準備儀表板所需的風度資料 (從 CSV 讀取) ---
+    
+    # A. 讀取加權指數 (TAIEX) 歷史檔
+    df_taiex = load_history_data(HISTORY_FILE_TAIEX)
+    taiex_w_status = "無資料"
+    taiex_w_streak = 0
+    taiex_w_bias = 0.0
+    
+    if not df_taiex.empty:
+        # 【修正點 1】: 補上 'date' 欄位
+        if '日期' in df_taiex.columns:
+            df_taiex['date'] = df_taiex['日期'].dt.strftime('%Y-%m-%d')
+        
+        # 【修正點 2】: 補上 'wind' 欄位 (這是這次報錯的原因)
+        if '風度' in df_taiex.columns:
+            df_taiex['wind'] = df_taiex['風度']
+            
+        # 取得最新一筆
+        latest_taiex = df_taiex.iloc[-1]
+        taiex_w_status = str(latest_taiex['風度']).strip()
+        
+        # 現在 df_taiex 裡面同時有 'date' 和 'wind' 了，計算函式就能正常運作
+        taiex_w_streak = calculate_wind_streak(df_taiex, latest_taiex['日期'].strftime("%Y-%m-%d"))
+        
+        try:
+            taiex_w_bias = float(str(latest_taiex['乖離率']).replace('%', '').strip())
+        except: taiex_w_bias = 0.0
+
+    # B. 讀取櫃買指數 (TPEx) 歷史檔
+    df_tpex = load_history_data(HISTORY_FILE_TPEX)
+    tpex_w_status = "無資料"
+    tpex_w_streak = 0
+    tpex_w_bias = 0.0
+    
+    if not df_tpex.empty:
+        # 【修正點 1】: 補上 'date' 欄位
+        if '日期' in df_tpex.columns:
+            df_tpex['date'] = df_tpex['日期'].dt.strftime('%Y-%m-%d')
+
+        # 【修正點 2】: 補上 'wind' 欄位
+        if '風度' in df_tpex.columns:
+            df_tpex['wind'] = df_tpex['風度']
+
+        # 取得最新一筆
+        latest_tpex = df_tpex.iloc[-1]
+        tpex_w_status = str(latest_tpex['風度']).strip()
+        
+        tpex_w_streak = calculate_wind_streak(df_tpex, latest_tpex['日期'].strftime("%Y-%m-%d"))
+        
+        try:
+            tpex_w_bias = float(str(latest_tpex['乖離率']).replace('%', '').strip())
+        except: tpex_w_bias = 0.0
+
+    # --- 2. 繪製雙指針儀表板 ---
+    # 使用 columns 佈局：左邊放儀表板 (寬度 1.5)，右邊放數據卡片 (寬度 2.5)
+    col_gauge, col_cards = st.columns([1.5, 2.5]) 
     
     with col_gauge:
-        # 呼叫新寫的函式：傳入 風度、天數、與 櫃買資料
-        gauge_fig = plot_wind_gauge_tpex_style(wind_status, wind_streak, tpex_info)
+        # 呼叫新的 V4.0 繪圖函式 (傳入 8 個參數)
+        gauge_fig = plot_wind_gauge_bias_driven(
+            taiex_w_status, taiex_w_streak, taiex_w_bias,  # 加權數據
+            tpex_w_status, tpex_w_streak, tpex_w_bias,     # 櫃買數據
+            taiex, tpex_info                               # 即時報價 dict
+        )
         
-        # 為了美觀，強制使用深色容器包覆 (模擬 Card 效果)
+        # 容器包覆
         st.markdown('<div style="background-color:#1a1a1a; border-radius:15px; padding:10px; box-shadow:0 4px 6px rgba(0,0,0,0.3);">', unsafe_allow_html=True)
         st.plotly_chart(gauge_fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1941,186 +2316,97 @@ def show_dashboard():
         st.plotly_chart(fig, use_container_width=True)
 
     with tab3:
-        c_title, c_ctrl = st.columns([3, 1])
-        with c_title: 
-            st.markdown("#### 🔄 2025 年度風度循環分析 (Wind Cycle Analysis)")
-        with c_ctrl: 
-            leverage = st.number_input("⚖️ 操作槓桿倍數", min_value=0.1, max_value=10.0, value=1.0, step=0.1, help="例如：操作正2 ETF 請設 2.0；操作個股可設 1.0 或其 Beta 值。")
+        st.markdown("#### 🔄 2025 年度風度循環分析 (Wind Cycle Analysis)")
         
-        hist_df = load_history_data()
-        if not hist_df.empty:
-            hist_df['日期'] = pd.to_datetime(hist_df['日期'], format='mixed', errors='coerce')
-            hist_df = hist_df.sort_values('日期', ascending=True).reset_index(drop=True)
-            
-            min_date = hist_df['日期'].iloc[0]
-            max_date = hist_df['日期'].iloc[-1] 
+        # 定義 CSS (只定義一次，避免重複)
+        st.markdown("""<style>.dashboard-grid-v183 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 25px; } @media (max-width: 768px) { .dashboard-grid-v183 { grid-template-columns: 1fr 1fr; } } .m-card { background: #fff; border-radius: 12px; padding: 15px 5px; text-align: center; border: 1px solid #f0f0f0; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: center; height: 100%; } .bd-red { border-top: 4px solid #e74c3c; } .bd-yellow { border-top: 4px solid #f1c40f; } .bd-green { border-top: 4px solid #2ecc71; } .mc-lbl { font-size: 18px; font-weight: bold; color: #555; margin-bottom: 5px; } .mc-val { font-size: 22px; font-weight: 800; color: #2c3e50; margin: 2px 0; font-family: Arial, sans-serif; } .mc-sub { font-size: 12px; color: #888; margin-top: 2px; } .p-bg { width: 100%; height: 4px; background: #f1f2f6; border-radius: 2px; margin-top: 8px; overflow: hidden; margin-left: auto; margin-right: auto; } .p-fill { height: 100%; border-radius: 2px; }</style>""", unsafe_allow_html=True)
 
-            hist_df['wind_clean'] = hist_df['風度'].fillna('').astype(str).str.strip()
-
-            col_20ma = next((c for c in hist_df.columns if '20ma' in c.lower().replace(' ', '')), None)
-            hist_df['MA20'] = pd.to_numeric(hist_df[col_20ma], errors='coerce') if col_20ma else hist_df['收'].rolling(window=20, min_periods=1).mean()
-            
-            target_col = next((c for c in hist_df.columns if '行情' in c or '方向' in c), None)
-            
-            if target_col:
-                hist_df[target_col] = hist_df[target_col].astype(str).str.strip()
-                def get_cycle_v179(val):
-                    if '強風' in val and '亂流' in val: return 'active'
-                    if '無風' in val and '陣風' in val: return 'passive'
-                    return 'transition'
-                hist_df['cycle'] = hist_df[target_col].apply(get_cycle_v179)
-            else:
-                hist_df['cycle'] = hist_df['wind_clean'].apply(
-                    lambda w: 'active' if ('強風' in w or '亂流' in w) and not ('無風' in w or '陣風' in w) else 
-                             ('passive' if ('無風' in w or '陣風' in w) and not ('強風' in w or '亂流' in w) else 'transition')
-                )
-
-            d_act = len(hist_df[hist_df['cycle'] == 'active'])
-            d_pass = len(hist_df[hist_df['cycle'] == 'passive'])
-            d_tran = len(hist_df[hist_df['cycle'] == 'transition'])
-            total_days = len(hist_df)
-            
-            p_act = (d_act / total_days * 100) if total_days > 0 else 0
-            p_pass = (d_pass / total_days * 100) if total_days > 0 else 0
-            p_tran = (d_tran / total_days * 100) if total_days > 0 else 0
-
-            cnt_strong = hist_df['wind_clean'].str.contains('強風').sum()
-            cnt_chaos = hist_df['wind_clean'].str.contains('亂流').sum()
-            cnt_calm = hist_df['wind_clean'].str.contains('無風').sum()
-            cnt_gust = hist_df['wind_clean'].str.contains('陣風').sum()
-
-            zones = []
-            cycle_stats = {'active': {'return': []}, 'passive': {'return': []}, 'transition': {'return': []}}
-            
-            curr_start = hist_df.iloc[0]['日期']; curr_price = hist_df.iloc[0]['收']; curr_cycle = hist_df.iloc[0]['cycle']
-            for i in range(1, len(hist_df)):
-                row = hist_df.iloc[i]
-                if row['cycle'] != curr_cycle:
-                    end_date = row['日期']; end_price = hist_df.iloc[i-1]['收']
-                    ret = ((end_price - curr_price) / curr_price * 100) if curr_price > 0 else 0
-                    zones.append({'start': curr_start, 'end': end_date, 'type': curr_cycle})
-                    if curr_cycle in cycle_stats: cycle_stats[curr_cycle]['return'].append(ret)
-                    curr_start = row['日期']; curr_price = row['收']; curr_cycle = row['cycle']
-            
-            last_end = hist_df.iloc[-1]['日期'] + pd.Timedelta(days=1); last_price = hist_df.iloc[-1]['收']
-            last_ret = ((last_price - curr_price) / curr_price * 100) if curr_price > 0 else 0
-            zones.append({'start': curr_start, 'end': last_end, 'type': curr_cycle})
-            if curr_cycle in cycle_stats: cycle_stats[curr_cycle]['return'].append(last_ret)
-
-            def avg_leveraged(l): base_avg = sum(l)/len(l) if l else 0; return base_avg * leverage
-            r_act = avg_leveraged(cycle_stats['active']['return'])
-            r_pass = avg_leveraged(cycle_stats['passive']['return'])
-            r_tran = avg_leveraged(cycle_stats['transition']['return'])
-            
-            c_act_val = '#e74c3c' if r_act > 0 else '#27ae60'; c_pass_val = '#e74c3c' if r_pass > 0 else '#27ae60'; c_tran_val = '#e74c3c' if r_tran > 0 else ('#27ae60' if r_tran < 0 else '#95a5a6')
-            
-            st.markdown("""<style>.dashboard-grid-v183 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 25px; } @media (max-width: 768px) { .dashboard-grid-v183 { grid-template-columns: 1fr 1fr; } } .m-card { background: #fff; border-radius: 12px; padding: 15px 5px; text-align: center; border: 1px solid #f0f0f0; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: center; height: 100%; } .bd-red { border-top: 4px solid #e74c3c; } .bd-yellow { border-top: 4px solid #f1c40f; } .bd-green { border-top: 4px solid #2ecc71; } .mc-lbl { font-size: 18px; font-weight: bold; color: #555; margin-bottom: 5px; } .mc-val { font-size: 22px; font-weight: 800; color: #2c3e50; margin: 2px 0; font-family: Arial, sans-serif; } .mc-sub { font-size: 12px; color: #888; margin-top: 2px; } .p-bg { width: 100%; height: 4px; background: #f1f2f6; border-radius: 2px; margin-top: 8px; overflow: hidden; margin-left: auto; margin-right: auto; } .p-fill { height: 100%; border-radius: 2px; }</style>""", unsafe_allow_html=True)
-            
-            def make_card_html(border_class, title, value_html, sub_text, bar_color=None, bar_pct=0):
-                bar_html = f'<div class="p-bg"><div class="p-fill" style="width:{bar_pct}%; background:{bar_color};"></div></div>' if bar_color else ""
-                return f"""<div class="m-card {border_class}"><div class="mc-lbl">{title}</div><div class="mc-val">{value_html}</div><div class="mc-sub">{sub_text}</div>{bar_html}</div>"""
-            
-            sub_text_suffix = f" (x{leverage})" if leverage != 1.0 else ""
-            
-            val_act = f"{d_act} <span style='font-size:16px; color:#999'>({cnt_strong}/{cnt_chaos})</span> <span style='font-size:12px'>天</span>"
-            c1 = make_card_html("bd-red", "🔴 強風/亂流循環", val_act, f"佔比 {p_act:.0f}%", "#e74c3c", p_act)
-            c2 = make_card_html("bd-red", "🚀 積極績效", f"<span style='color:{c_act_val}'>{r_act:+.2f}%</span>", f"預估報酬{sub_text_suffix}")
-            
-            val_tran = f"{d_tran} <span style='font-size:12px'>天</span>"
-            c3 = make_card_html("bd-yellow", "🟡 循環交界", val_tran, f"佔比 {p_tran:.0f}%", "#f1c40f", p_tran)
-            c4 = make_card_html("bd-yellow", "⚖️ 無方向績效", f"<span style='color:{c_tran_val}'>{r_tran:+.2f}%</span>", f"預估波動{sub_text_suffix}")
-            
-            val_pass = f"{d_pass} <span style='font-size:16px; color:#999'>({cnt_calm}/{cnt_gust})</span> <span style='font-size:12px'>天</span>"
-            c5 = make_card_html("bd-green", "🟢 無風/陣風循環", val_pass, f"佔比 {p_pass:.0f}%", "#2ecc71", p_pass)
-            c6 = make_card_html("bd-green", "🛡️ 保守績效", f"<span style='color:{c_pass_val}'>{r_pass:+.2f}%</span>", f"預估損益{sub_text_suffix}")
-            
-            st.markdown(f'<div class="dashboard-grid-v183">{c1}{c2}{c3}{c4}{c5}{c6}</div>', unsafe_allow_html=True)
-            
-            st.caption("🌈 線上的顏色代表當日的風度：🔴強風 🟣亂流 🟡陣風 🟢無風 ____實線為 上櫃指數 ----虛線為 20MA (月線)。")
-            
-            wind_colors_map = {'強風': '#e74c3c', '亂流': '#9b59b6', '陣風': '#f1c40f', '無風': '#2ecc71'}
-            point_colors = [wind_colors_map.get(str(w).strip(), '#999') for w in hist_df['wind_clean']]
-            
-            fig = go.Figure()
-            color_map_cycle = {'active': 'rgba(231, 76, 60, 0.15)', 'passive': 'rgba(46, 204, 113, 0.15)', 'transition': 'rgba(150, 150, 150, 0.2)'}
-            shapes = []
-            for z in zones: 
-                shapes.append(dict(
-                    type="rect", 
-                    xref="x", yref="paper", 
-                    x0=z['start'], x1=z['end'], 
-                    y0=0, y1=1, 
-                    fillcolor=color_map_cycle.get(z['type'], '#eee'), 
-                    opacity=1, layer="below", line_width=0
-                ))
-            
-            if '收' in hist_df.columns: 
-                fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='lines', name='上櫃指數', line=dict(color='#34495e', width=1.5, shape='spline', smoothing=1.3)))
-            
-            if 'MA20' in hist_df.columns: 
-                fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['MA20'], mode='lines', name='20MA', line=dict(color='#9b59b6', width=2, dash='dash', shape='spline', smoothing=1.3)))
-            
-            fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='markers', name='每日風度', marker=dict(color=point_colors, size=8.5, line=dict(width=1, color='white'), symbol='circle'), hoverinfo='skip'))
-
-            hover_text = []
-            for idx, row in hist_df.iterrows():
-                raw_dir = row['wind_clean']
-                cycle_zh = {"active":"積極", "passive":"保守", "transition":"無方向"}.get(row['cycle'], "-")
-                hover_text.append(f"<b>{row['日期'].strftime('%Y-%m-%d')}</b><br>收: {row['收']:,.0f}<br>向: {raw_dir}<br>態: {cycle_zh}")
-            fig.add_trace(go.Scatter(x=hist_df['日期'], y=hist_df['收'], mode='markers', name='資訊', marker=dict(size=0, opacity=0), hoverinfo='text', hovertext=hover_text))
-            
-            fig.update_layout(
-                title=dict(text="📊 市場循環趨勢圖", font=dict(size=20, color='#000000', weight='bold'), x=0.01, y=0.98), 
-                shapes=shapes, 
-                template="plotly_white", paper_bgcolor='white', plot_bgcolor='white', height=500, 
-                font=dict(family="Arial, sans-serif", color='#000000', size=12), 
-                xaxis=dict(
-                    type="date", 
-                    range=[min_date, max_date],
-                    rangeslider=dict(visible=True, thickness=0.05, bgcolor='#f8f9fa', borderwidth=0), 
-                    rangeselector=dict(buttons=list([dict(count=1, label="1M", step="month", stepmode="backward"), dict(count=3, label="3M", step="month", stepmode="backward"), dict(count=6, label="6M", step="month", stepmode="backward"), dict(step="all", label="All")]), bgcolor="#ecf0f1", activecolor="#3498db", font=dict(color="#2c3e50"), x=0, y=1.05),
-                    **common_axis_config
-                ), 
-                yaxis=dict(title="", zeroline=False, **common_axis_config),
-                margin=dict(t=80, l=0, r=0, b=40), 
-                legend=dict(
-                    orientation="h", 
-                    yanchor="bottom", y=1.02, 
-                    xanchor="right", x=1, 
-                    bgcolor='rgba(255,255,255,0.8)', 
-                    bordercolor='#eee', 
-                    borderwidth=1, 
-                    font=dict(size=12, color='#000000', weight='bold')
-                ), 
-                hovermode="x unified"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-        else: st.warning("⚠️ 無資料，請確認 CSV 是否已上傳。")
+        # --- 【新增】市場切換選單 ---
+        cycle_market = st.radio("選擇分析市場", ["上櫃指數 (TPEx)", "加權指數 (TAIEX)"], horizontal=True)
+        
+        if "上櫃" in cycle_market:
+            # 載入櫃買資料
+            hist_df = load_history_data(HISTORY_FILE_TPEX)
+            render_cycle_analysis_ui(hist_df, index_name="上櫃指數")
+        else:
+            # 載入加權資料
+            hist_df = load_history_data(HISTORY_FILE_TAIEX)
+            render_cycle_analysis_ui(hist_df, index_name="加權指數")
 
     st.markdown("---")
 
     st.header("🏆 策略選股月度風雲榜")
     st.caption("統計各策略下，股票出現的次數與所屬族群。")
+    
     stats_df = calculate_monthly_stats(df)
+    
     if not stats_df.empty:
         month_list = stats_df['Month'].unique()
         selected_month = st.selectbox("選擇統計月份", options=month_list)
+        
+        # 篩選月份
         filtered_stats = stats_df[stats_df['Month'] == selected_month]
+        
+        # --- [新增] 計算該月份所有出現股票的平均成交值 ---
+        with st.spinner("正在計算月均成交值..."):
+            all_unique_stocks = filtered_stats['stock'].unique().tolist()
+            # 呼叫上面新增的計算函式
+            monthly_turnover_map = get_monthly_avg_turnover(all_unique_stocks, selected_month)
+            
+            # 將成交值 map 回 dataframe
+            filtered_stats['AvgTurnover'] = filtered_stats['stock'].map(monthly_turnover_map).fillna(0)
+
         strategies_list = filtered_stats['Strategy'].unique()
-        cols1 = st.columns(3); cols2 = st.columns(3)
+        cols1 = st.columns(3)
+        cols2 = st.columns(3)
+        
         for i, strategy in enumerate(strategies_list):
+            # 取出該策略的前 10 名
             strat_data = filtered_stats[filtered_stats['Strategy'] == strategy].head(10)
-            col_config = {"stock": "股票名稱", "Count": st.column_config.ProgressColumn("出現次數", format="%d次", min_value=0, max_value=int(strat_data['Count'].max()) if not strat_data.empty else 1), "Industry": st.column_config.TextColumn("族群", help="所屬產業類別")}
-            if i < 3:
-                with cols1[i]:
-                    st.subheader(f"{strategy}")
-                    st.dataframe(strat_data[['stock', 'Count', 'Industry']], hide_index=True, use_container_width=True, column_config=col_config)
-            else:
-                with cols2[i-3]:
-                    st.subheader(f"{strategy}")
-                    st.dataframe(strat_data[['stock', 'Count', 'Industry']], hide_index=True, use_container_width=True, column_config=col_config)
-    else: st.info("累積足夠資料後，將在此顯示統計排行。")
+            
+            # 計算最大值用於進度條 (避免全空報錯)
+            max_count = int(strat_data['Count'].max()) if not strat_data.empty else 1
+            max_turnover = int(strat_data['AvgTurnover'].max()) if not strat_data.empty else 10
+            
+	# 設定欄位顯示格式
+            col_config = {
+                "stock": "股票名稱",
+                "Count": st.column_config.ProgressColumn(
+                    "次數", 
+                    format="%d次", 
+                    min_value=0, 
+                    max_value=max_count,
+                    help="該股票在這個月符合策略的次數",
+                ),
+                "AvgTurnover": st.column_config.NumberColumn(  # 改用 NumberColumn
+                    "月均成交(億)", 
+                    format="$%.1f億", 
+                    help="該月份的平均每日成交金額"
+                ),
+                "Industry": st.column_config.TextColumn("族群", help="所屬產業類別")
+            }
+
+	    # --- 樣式設定：嘗試將成交值置中 ---
+            # 注意：Streamlit 的數值欄位通常會強制靠右(財務標準)，若置中無效則為系統限制
+            styled_df = strat_data[['stock', 'Count', 'AvgTurnover', 'Industry']].style.set_properties(
+                subset=['AvgTurnover'], 
+                **{'text-align': 'center'}
+	    )
+
+            # 排版邏輯 (前3個在上排，後3個在下排)
+            target_col = cols1[i] if i < 3 else cols2[i-3]
+            
+            with target_col:
+                st.subheader(f"{strategy}")
+                # 顯示包含新欄位的 Dataframe
+                st.dataframe(
+                    strat_data[['stock', 'Count', 'AvgTurnover', 'Industry']], 
+                    hide_index=True, 
+                    use_container_width=True, 
+                    column_config=col_config
+                )
+    else: 
+        st.info("累積足夠資料後，將在此顯示統計排行。")
 
     st.markdown("---")
     st.header("🔥 今日市場重點監控 (權值股/熱門股 成交值排行)")
@@ -2188,6 +2474,29 @@ def show_admin_panel():
                 except: continue
             if not success: st.error("❌ 檔案讀取失敗")
         except Exception as e: st.error(f"❌ 嚴重錯誤: {e}")
+
+# --- 【新增】上傳加權指數歷史檔 ---
+    st.subheader("📥 上傳 [加權指數] 風度歷史檔")
+    taiex_file = st.file_uploader("上傳 kite_history_taiex.csv", type=["csv"], key="taiex_uploader")
+    
+    if taiex_file is not None:
+        try:
+            taiex_file.seek(0)
+            file_bytes = taiex_file.read()
+            success = False
+            for enc in ['utf-8-sig', 'utf-8', 'big5', 'cp950']:
+                try:
+                    temp_df = pd.read_csv(io.BytesIO(file_bytes), encoding=enc)
+                    temp_df.columns = temp_df.columns.str.strip()
+                    if '日期' in temp_df.columns and '風度' in temp_df.columns:
+                        temp_df.to_csv(HISTORY_FILE_TAIEX, index=False, encoding='utf-8-sig')
+                        st.success(f"✅ 加權指數歷史檔已更新！(編碼: {enc}, {len(temp_df)} 筆資料)")
+                        success = True
+                        break
+                except: continue
+            if not success: st.error("❌ 檔案讀取失敗，請確認格式 (需包含 '日期' 與 '風度' 欄位)")
+        except Exception as e: st.error(f"❌ 嚴重錯誤: {e}")
+
 
     # --- V164 新增：後台專屬的詳細循環清單 (Debug) ---
     if os.path.exists(HISTORY_FILE):
@@ -2358,5 +2667,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
