@@ -1550,21 +1550,21 @@ def plot_wind_gauge_bias_driven(
         
         # 標題 (帶有指針顏色的小點，方便對照)
         fig.add_annotation(
-            x=x_center, y=0.40, 
+            x=x_center, y=0.36, 
             text=f"● {title}", showarrow=False, 
-            font=dict(size=14, color=ptr_color, weight="bold")
+            font=dict(size=12.8, color=ptr_color, weight="bold")
         )
         fig.add_annotation(
             x=x_center, y=0.24, 
             text=f"{price:,.0f}" if price > 1000 else f"{price:,.2f}", 
             showarrow=False, 
-            font=dict(size=22, color=p_color, family="Arial Black")
+            font=dict(size=20, color=p_color, family="Arial Black")
         )
         fig.add_annotation(
             x=x_center, y=0.10, 
             text=f"{arrow} {abs(change):.2f} ({abs(pct):.2f}%)", 
             showarrow=False, 
-            font=dict(size=14, color=p_color, weight="bold")
+            font=dict(size=13, color=p_color, weight="bold")
         )
 
     # 左：加權
@@ -1575,13 +1575,13 @@ def plot_wind_gauge_bias_driven(
     # --- 7. 底部資訊：雙欄位狀態 ---
     
     # 左下：加權狀態
-    fig.add_annotation(x=-0.45, y=-0.05, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=20, color=COLOR_TAIEX_PTR, weight="bold"))
-    fig.add_annotation(x=-0.45, y=-0.20, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=14, color="#AAAAAA"))
+    fig.add_annotation(x=-0.45, y=-0.05, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=17.5, color=COLOR_TAIEX_PTR, weight="bold"))
+    fig.add_annotation(x=-0.45, y=-0.20, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=12.5, color="#AAAAAA"))
     #fig.add_annotation(x=-0.45, y=-0.35, text=f"乖離 {taiex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
 
     # 右下：櫃買狀態
-    fig.add_annotation(x=0.45, y=-0.05, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=20, color=COLOR_TPEX_PTR, weight="bold"))
-    fig.add_annotation(x=0.45, y=-0.20, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=14, color="#AAAAAA"))
+    fig.add_annotation(x=0.45, y=-0.05, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=17.5, color=COLOR_TPEX_PTR, weight="bold"))
+    fig.add_annotation(x=0.45, y=-0.20, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=12.5, color="#AAAAAA"))
     #fig.add_annotation(x=0.45, y=-0.35, text=f"乖離 {tpex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
 
     # 10. Layout
