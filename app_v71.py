@@ -1590,11 +1590,11 @@ def plot_wind_gauge_bias_driven(
     # 9. Layout (維持 RWD 優化設定)
     fig.update_layout(
         shapes=shapes,
-        xaxis=dict(range=[-1.6, 1.6], visible=False, fixedrange=True),
+        xaxis=dict(range=[-1.7, 1.7], visible=False, fixedrange=True),
         yaxis=dict(range=[-0.5, 1.3], visible=False, scaleratio=1, fixedrange=True),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
-        height=350,
+        height=320,
         margin=dict(t=10, b=10, l=10, r=10),
         template='plotly_dark'
     )
@@ -2670,6 +2670,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
