@@ -2178,6 +2178,10 @@ def show_dashboard():
             min-width: 100% !important;
         }
     }
+	/* 【新增】強制 Plotly 容器不塌陷 */
+    .js-plotly-plot {
+        min-height: 350px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -2683,6 +2687,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
