@@ -2194,7 +2194,7 @@ def show_dashboard():
         
         st.markdown('<div style="background-color:#1a1a1a; border-radius:15px; padding:5px; box-shadow:0 4px 6px rgba(0,0,0,0.3);">', unsafe_allow_html=True)
         # 加上 key 確保不重複渲染，config 設定 responsive
-        st.plotly_chart(gauge_fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key="main_gauge")
+        st.plotly_chart(gauge_fig, use_container_width=True, height=360, config={'displayModeBar': False, 'responsive': True}, key="main_gauge")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_cards:
@@ -2683,6 +2683,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
