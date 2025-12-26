@@ -876,7 +876,6 @@ def plot_fear_greed_gauge_dark(score):
             showline=False,
             zerolinewidth=0,
             zerolinecolor='rgba(0,0,0,0)', # 透明化
-            scaleanchor="x", 
             scaleratio=1, 
             fixedrange=True
         ),
@@ -2684,6 +2683,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
