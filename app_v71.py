@@ -876,7 +876,6 @@ def plot_fear_greed_gauge_dark(score):
             showline=False,
             zerolinewidth=0,
             zerolinecolor='rgba(0,0,0,0)', # 透明化
-            scaleratio=1, 
             fixedrange=True
         ),
         paper_bgcolor='#1a1a1a', 
@@ -1591,7 +1590,7 @@ def plot_wind_gauge_bias_driven(
     fig.update_layout(
         shapes=shapes,
         xaxis=dict(range=[-1.6, 1.6], visible=False, fixedrange=True),
-        yaxis=dict(range=[-0.5, 1.3], visible=False, scaleratio=1, fixedrange=True),
+        yaxis=dict(range=[-0.5, 1.3], visible=False, fixedrange=True),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
         height=360, # 稍微加高
@@ -2687,6 +2686,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
