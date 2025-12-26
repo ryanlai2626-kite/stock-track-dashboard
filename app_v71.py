@@ -1594,7 +1594,7 @@ def plot_wind_gauge_bias_driven(
         yaxis=dict(range=[-0.5, 1.3], visible=False, scaleratio=1, fixedrange=True),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
-        height=300,
+        height=350,
         margin=dict(t=10, b=10, l=10, r=10),
         template='plotly_dark'
     )
@@ -2670,6 +2670,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
