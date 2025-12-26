@@ -1581,11 +1581,11 @@ def plot_wind_gauge_bias_driven(
 
     # 底部資訊 (字體縮小以防跑版)
     fig.add_annotation(x=-0.45, y=-0.08, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=16, color=COLOR_TAIEX_PTR, weight="bold"))
-    fig.add_annotation(x=-0.45, y=-0.22, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=12, color="#AAAAAA"))
+    fig.add_annotation(x=-0.45, y=-0.22, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=12, color="#FFFFFF"))
     #fig.add_annotation(x=-0.45, y=-0.35, text=f"乖離 {taiex_bias}%", showarrow=False, font=dict(size=11, color="#666666"))
 
     fig.add_annotation(x=0.45, y=-0.08, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=16, color=COLOR_TPEX_PTR, weight="bold"))
-    fig.add_annotation(x=0.45, y=-0.22, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=12, color="#AAAAAA"))
+    fig.add_annotation(x=0.45, y=-0.22, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=12, color="#FFFFFF"))
     #fig.add_annotation(x=0.45, y=-0.35, text=f"乖離 {tpex_bias}%", showarrow=False, font=dict(size=11, color="#666666"))
 
     # Layout (高度增加至 400 以容納底部文字，背景一致)
@@ -2684,3 +2684,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
