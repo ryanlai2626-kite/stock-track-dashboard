@@ -1578,14 +1578,14 @@ def plot_wind_gauge_bias_driven(
     draw_market_info(-0.40, "加權指數", taiex_data, COLOR_TAIEX_PTR)
     draw_market_info(0.40, "櫃買指數", tpex_data, COLOR_TPEX_PTR)
 
-    # 8. 底部資訊
-    fig.add_annotation(x=-0.45, y=-0.05, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=18, color=COLOR_TAIEX_PTR, weight="bold"))
-    fig.add_annotation(x=-0.45, y=-0.20, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=13, color="#FFFFFF"))
-    #fig.add_annotation(x=-0.45, y=-0.35, text=f"乖離 {taiex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
+    # 底部資訊 (字體縮小以防跑版)
+    fig.add_annotation(x=-0.45, y=-0.08, text=f"{str(taiex_wind).strip()}", showarrow=False, font=dict(size=16, color=COLOR_TAIEX_PTR, weight="bold"))
+    fig.add_annotation(x=-0.45, y=-0.22, text=f"持續 {taiex_streak} 天", showarrow=False, font=dict(size=12, color="#FFFFFF"))
+    #fig.add_annotation(x=-0.45, y=-0.35, text=f"乖離 {taiex_bias}%", showarrow=False, font=dict(size=11, color="#666666"))
 
-    fig.add_annotation(x=0.45, y=-0.05, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=18, color=COLOR_TPEX_PTR, weight="bold"))
-    fig.add_annotation(x=0.45, y=-0.20, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=13, color="#FFFFFF"))
-    #fig.add_annotation(x=0.45, y=-0.35, text=f"乖離 {tpex_bias}%", showarrow=False, font=dict(size=12, color="#666666"))
+    fig.add_annotation(x=0.45, y=-0.08, text=f"{str(tpex_wind).strip()}", showarrow=False, font=dict(size=16, color=COLOR_TPEX_PTR, weight="bold"))
+    fig.add_annotation(x=0.45, y=-0.22, text=f"持續 {tpex_streak} 天", showarrow=False, font=dict(size=12, color="#FFFFFF"))
+    #fig.add_annotation(x=0.45, y=-0.35, text=f"乖離 {tpex_bias}%", showarrow=False, font=dict(size=11, color="#666666"))
 
     # 9. Layout (維持 RWD 優化設定)
     fig.update_layout(
@@ -2670,4 +2670,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
