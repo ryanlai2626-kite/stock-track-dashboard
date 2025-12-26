@@ -1502,7 +1502,7 @@ def plot_wind_gauge_bias_driven(
         angle = 180 - (pct / 100) * 180
         lx, ly = get_xy_from_angle(R_LABEL, angle)
         rot_angle = 90 - angle
-        fig.add_annotation(x=lx, y=ly, text=txt, showarrow=False, font=dict(size=16, color=color, family="Arial", weight="bold"), textangle=rot_angle)
+        fig.add_annotation(x=lx, y=ly, text=txt, showarrow=False, font=dict(size=15, color=color, family="Arial", weight="bold"), textangle=rot_angle)
 
     add_curved_label("無風 / 陣風循環", 15, c_green_base)
     add_curved_label("循環的交界", 50, c_gray_base)
@@ -2667,5 +2667,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
