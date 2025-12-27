@@ -880,7 +880,7 @@ def plot_fear_greed_gauge_dark(score):
         ),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
-        height=320,
+        height=340,
         margin=dict(t=30, b=10, l=10, r=10),
         template='plotly_dark'
     )
@@ -1589,11 +1589,11 @@ def plot_wind_gauge_bias_driven(
     # Layout (高度增加至 400 以容納底部文字，背景一致)
     fig.update_layout(
         shapes=shapes,
-        xaxis=dict(range=[-1.6, 1.6], visible=False, fixedrange=True),
+        xaxis=dict(range=[-1.5, 1.5], visible=False, fixedrange=True),
         yaxis=dict(range=[-0.5, 1.3], visible=False, fixedrange=True),
         paper_bgcolor='#1a1a1a', 
         plot_bgcolor='#1a1a1a',
-        height=360, # 稍微加高
+        height=400, # 稍微加高
         margin=dict(t=10, b=10, l=10, r=10),
         template='plotly_dark'
     )
@@ -2170,7 +2170,7 @@ def show_dashboard():
     # 插入 CSS：強制在寬度小於 992px (平板/手機橫式) 時，將儀表板區塊變為單欄堆疊
     st.markdown("""
     <style>
-    @media (max-width: 992px) {
+    @media (max-width: 1300px) {
         div[data-testid="column"] {
             width: 100% !important;
             flex: 1 1 auto !important;
@@ -2179,7 +2179,7 @@ def show_dashboard():
     }
 	/* 【新增】強制 Plotly 容器不塌陷 */
     .js-plotly-plot {
-        min-height: 350px !important;
+        min-height: 400px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -2686,10 +2686,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
