@@ -33,23 +33,46 @@ def get_gsheet_connection():
 @st.cache_data(ttl=60) # 設定 60 秒快取，避免頻繁呼叫 API
 def load_data_from_gsheet(worksheet_name):
     try:
+        # 1. 測試連線憑證
         client = get_gsheet_connection()
-        sheet = client.open(st.secrets["sheet_name"]) # 讀取設定檔中的試算表名稱
+        
+        # 2. 測試開啟試算表
+        # 顯示正在嘗試開啟的名稱，方便除錯
+        target_sheet = st.secrets["sheet_name"]
+        sheet = client.open(target_sheet)
+        
+        # 3. 測試開啟分頁
         ws = sheet.worksheet(worksheet_name)
         
-        # 讀取所有資料並轉為 DataFrame
+        # 4. 讀取資料
         data = ws.get_all_records()
+        
+        # 5. 如果抓下來是空的，顯示警告
+        if not data:
+            st.warning(f"⚠️ 成功連上 {worksheet_name}，但 Google 回傳資料為空。請檢查該分頁第一列是否有欄位名稱。")
+            return pd.DataFrame()
+            
         df = pd.DataFrame(data)
         
-        # 資料清洗：確保日期格式正確
-        if '日期' in df.columns:
+        # 資料處理 (維持原樣)
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            df = df.sort_values('date', ascending=False)
+        elif '日期' in df.columns:
             df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
             df = df.dropna(subset=['日期']).sort_values('日期')
             
         return df
+        
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"❌ 找不到試算表！請確認 Secrets 裡的 sheet_name = '{st.secrets.get('sheet_name')}' 是否跟 Google Drive 檔名完全一致。")
+        return pd.DataFrame()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"❌ 找不到分頁 '{worksheet_name}'！請確認 Google Sheet 下方的分頁名稱是否完全一樣 (注意大小寫)。")
+        return pd.DataFrame()
     except Exception as e:
-        print(f"GSheet Load Error ({worksheet_name}): {e}")
-        return pd.DataFrame() # 失敗回傳空表
+        st.error(f"❌ 發生未預期的錯誤 ({worksheet_name}): {e}")
+        return pd.DataFrame()
 
 # --- 通用寫入函式 (取代 save_batch_data / to_csv) ---
 def save_data_to_gsheet(df, worksheet_name):
@@ -1329,28 +1352,48 @@ def render_stock_tags_v113(stock_str, turnover_map):
 def load_db():
     # 直接呼叫我們之前寫好的通用 GSheet 讀取函式
     # 記得分頁名稱要跟您在 Google Sheet 裡設定的一樣 ("Daily_Main")
-    df = load_data_from_gsheet("Daily_Main")
-    
-    if not df.empty:
-        # 1. 確保日期欄位是字串格式 (YYYY-MM-DD)
+    df = load_data_from_gsheet("worksheet_name")
+    try:
+        # 1. 測試連線憑證
+        client = get_gsheet_connection()
+        
+        # 2. 測試開啟試算表
+        # 顯示正在嘗試開啟的名稱，方便除錯
+        target_sheet = st.secrets["sheet_name"]
+        sheet = client.open(target_sheet)
+        
+        # 3. 測試開啟分頁
+        ws = sheet.worksheet(worksheet_name)
+        
+        # 4. 讀取資料
+        data = ws.get_all_records()
+        
+        # 5. 如果抓下來是空的，顯示警告
+        if not data:
+            st.warning(f"⚠️ 成功連上 {worksheet_name}，但 Google 回傳資料為空。請檢查該分頁第一列是否有欄位名稱。")
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(data)
+        
+        # 資料處理 (維持原樣)
         if 'date' in df.columns:
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            df = df.sort_values('date', ascending=False)
+        elif '日期' in df.columns:
+            df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
+            df = df.dropna(subset=['日期']).sort_values('日期')
             
-        # 2. 確保數值欄位是整數 (防呆)
-        numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        return df
         
-        # 3. 確保手動成交值欄位存在且為字串
-        if 'manual_turnover' not in df.columns:
-            df['manual_turnover'] = ""
-        df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
-
-        # 4. 依照日期排序 (新到舊)
-        return df.sort_values('date', ascending=False)
-        
-    return pd.DataFrame()
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"❌ 找不到試算表！請確認 Secrets 裡的 sheet_name = '{st.secrets.get('sheet_name')}' 是否跟 Google Drive 檔名完全一致。")
+        return pd.DataFrame()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"❌ 找不到分頁 '{worksheet_name}'！請確認 Google Sheet 下方的分頁名稱是否完全一樣 (注意大小寫)。")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"❌ 發生未預期的錯誤 ({worksheet_name}): {e}")
+        return pd.DataFrame()
 
 # V158: 新增歷史資料讀取函數
 # --- 【修改】加入 file_path 參數，預設為櫃買 ---
@@ -2921,6 +2964,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
