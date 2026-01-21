@@ -2722,64 +2722,186 @@ def show_dashboard():
             st.markdown('<a href="https://service-82255878134.us-west1.run.app/"  target="_blank" class="link-btn">Ding-風箏策略儀表板</a>', unsafe_allow_html=True)
 
 # --- 6. 頁面視圖：管理後台 (後台) ---
-# --- 6. 頁面視圖：管理後台 (後台) [功能增強版] ---
+# --- 6. 頁面: 管理後台 (Google Sheets 完整修復版) ---
 def show_admin_panel():
-    st.title("⚙️ 資料管理後台 (Google Sheets 連動版)")
+    st.title("⚙️ 資料管理後台 (Google Sheets)")
     
-    # 建立頁籤
-    tab_tpex, tab_taiex = st.tabs(["📈 櫃買 (TPEx)", "📊 加權 (TAIEX)"])
+    # 檢查 API Key
+    if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
 
-    # === 共用的管理介面生成函式 ===
-    def render_sheet_manager(tab_obj, sheet_name, ticker):
-        with tab_obj:
-            st.subheader(f"📂 {sheet_name} 歷史資料管理")
+    # 定義四個分頁
+    t1, t2, t3, t4 = st.tabs(["📈 櫃買歷史", "📊 加權歷史", "📥 新增每日資料", "📝 主資料庫編輯"])
+    
+    # === 子功能：自動更新歷史股價 ===
+    def auto_update_index_history(df, ticker_symbol):
+        try:
+            stock = yf.Ticker(ticker_symbol)
+            hist = stock.history(period="3mo")
+            if hist.empty: return df, "❌ 無法取得 Yahoo 報價"
             
-            # 1. 讀取目前 Google Sheet 資料
+            last = hist.iloc[-1]
+            d_str = last.name.strftime('%Y-%m-%d')
+            close = float(last['Close'])
+            ma20 = hist['Close'].rolling(20).mean().iloc[-1]
+            bias = (close - ma20) / ma20 * 100
+            
+            # 檢查日期是否重複
+            # 注意：從 Google Sheet 讀下來的日期通常是字串
+            current_dates = df['日期'].astype(str).values if '日期' in df.columns else []
+            if d_str in current_dates: 
+                return df, f"⚠️ {d_str} 資料已存在，無需更新。"
+            
+            # 自動判斷風度
+            wind = "無風"
+            if bias > 2: wind = "強風"
+            elif bias > 0.5: wind = "亂流"
+            elif bias < -2: wind = "陣風"
+            
+            new_row = pd.DataFrame([{"日期": d_str, "收": round(close, 2), "風度": wind, "20MA": round(ma20, 2), "乖離率": f"{bias:.2f}%"}])
+            df = pd.concat([df, new_row], ignore_index=True)
+            
+            # 排序
+            if '日期' in df.columns:
+                df['dt_temp'] = pd.to_datetime(df['日期'])
+                df = df.sort_values('dt_temp').drop(columns=['dt_temp'])
+            
+            return df, f"✅ 已新增 {d_str}: {wind} (乖離 {bias:.2f}%)"
+        except Exception as e: return df, f"❌ 更新錯誤: {e}"
+
+    # === 子功能：渲染歷史資料管理介面 ===
+    def render_history_manager(tab, sheet_name, ticker):
+        with tab:
+            st.subheader(f"📂 {sheet_name} 歷史資料")
             df = load_data_from_gsheet(sheet_name)
             
+            # 若讀取失敗或為空，提示初始化
             if df.empty:
-                st.warning(f"⚠️ 無法讀取 {sheet_name}，請檢查 Google Sheets 設定或分頁名稱。")
+                st.warning(f"⚠️ {sheet_name} 目前沒有資料或讀取失敗。")
+                st.info("💡 請確認：\n1. Google Sheet 是否已共用給機器人 Email？\n2. 該分頁的第一列是否已填入欄位名稱？(日期, 收, 風度, 20MA, 乖離率)")
+                if st.button(f"🔄 我已設定好，重新讀取 {sheet_name}"):
+                    load_data_from_gsheet.clear()
+                    st.rerun()
                 return
 
-            # 2. 自動更新按鈕
-            col_auto, col_info = st.columns([1, 2])
-            with col_auto:
+            # 自動更新按鈕
+            c1, c2 = st.columns([1, 2])
+            with c1:
                 if st.button(f"⚡ 自動抓取今日數據", key=f"btn_{sheet_name}"):
-                    # 使用之前的 auto_update_index_history 邏輯 (需稍微修改參數)
-                    # 這裡假設 auto_update_index_history 回傳 (新df, msg)
-                    updated_df, msg = auto_update_index_history(df, ticker)
-                    
+                    new_df, msg = auto_update_index_history(df, ticker)
                     if "✅" in msg:
-                        # 寫入 Google Sheet
-                        ok, save_msg = save_data_to_gsheet(updated_df, sheet_name)
-                        if ok: st.success(f"{msg} \n {save_msg}")
-                        else: st.error(save_msg)
-                        time.sleep(1); st.rerun()
-                    else:
-                        st.warning(msg)
+                        save_data_to_gsheet(new_df, sheet_name)
+                        st.success(msg); time.sleep(1); st.rerun()
+                    else: st.warning(msg)
             
-            # 3. 資料編輯器
-            st.markdown("---")
-            edited_df = st.data_editor(
-                df, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                height=400,
-                key=f"editor_{sheet_name}"
-            )
+            # 編輯器
+            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key=f"ed_{sheet_name}", height=350)
             
-            # 4. 儲存按鈕
-            if st.button(f"💾 儲存 {sheet_name} 變更", key=f"save_{sheet_name}"):
-                ok, msg = save_data_to_gsheet(edited_df, sheet_name)
-                if ok: 
-                    st.success(msg)
-                    time.sleep(1); st.rerun()
-                else: 
-                    st.error(msg)
+            # 儲存按鈕
+            if st.button(f"💾 儲存 {sheet_name} 變更", key=f"sv_{sheet_name}"):
+                ok, m = save_data_to_gsheet(edited, sheet_name)
+                if ok: st.success(m); time.sleep(1); st.rerun()
+                else: st.error(m)
 
-    # 呼叫函式生成介面
-    render_sheet_manager(tab_tpex, "TPEx", "^TWOII")
-    render_sheet_manager(tab_taiex, "TAIEX", "^TWII")
+    # 1. 渲染櫃買與加權
+    render_history_manager(t1, "TPEx", "^TWOII")
+    render_history_manager(t2, "TAIEX", "^TWII")
+    
+    # 2. 每日資料上傳 (AI 解析)
+    with t3:
+        st.subheader("📥 新增每日戰情資料")
+        
+        # 初始化預覽 session
+        if 'preview_df' not in st.session_state: st.session_state.preview_df = None
+
+        uploaded_file = st.file_uploader("上傳每日截圖", type=["png", "jpg", "jpeg"])
+        
+        if uploaded_file and st.button("🤖 開始 AI 解析", type="primary"):
+            with st.spinner("AI 正在分析圖片..."):
+                try:
+                    img = Image.open(uploaded_file)
+                    json_text = ai_analyze_v86(img)
+                    if "error" in json_text and len(json_text) < 100: 
+                        st.error(f"API 錯誤: {json_text}")
+                    else:
+                        raw_data = json.loads(json_text)
+                        
+                        # --- 簡化的資料處理邏輯 ---
+                        # (這裡將 JSON 轉為 DataFrame 的邏輯簡化展示，實際運作會用您原本的 find_valid_records)
+                        # 假設解析成功，轉換格式...
+                        processed_list = []
+                        
+                        # 遞迴尋找有效資料
+                        def find_valid_records(data):
+                            found = []
+                            if isinstance(data, list):
+                                for item in data: found.extend(find_valid_records(item))
+                            elif isinstance(data, dict):
+                                if "col_01" in data: found.append(data)
+                                else:
+                                    for val in data.values(): found.extend(find_valid_records(val))
+                            return found
+
+                        valid_rows = find_valid_records(raw_data)
+                        
+                        for item in valid_rows:
+                            # 組合股票字串
+                            def get_stocks(start, end):
+                                res = []
+                                for i in range(start, end+1):
+                                    val = item.get(f"col_{i:02d}")
+                                    if val and str(val).lower() != 'null': res.append(str(val).strip())
+                                return "、".join(res)
+
+                            record = {
+                                "date": str(item.get("col_01")).replace("/", "-"),
+                                "wind": item.get("col_02", ""),
+                                "part_time_count": item.get("col_03", 0),
+                                "worker_strong_count": item.get("col_04", 0),
+                                "worker_trend_count": item.get("col_05", 0),
+                                "worker_strong_list": get_stocks(6, 8),
+                                "worker_trend_list": get_stocks(9, 11),
+                                "boss_pullback_list": get_stocks(12, 14),
+                                "boss_bargain_list": get_stocks(15, 17),
+                                "top_revenue_list": get_stocks(18, 23),
+                                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "manual_turnover": ""
+                            }
+                            processed_list.append(record)
+                        
+                        if processed_list:
+                            st.session_state.preview_df = pd.DataFrame(processed_list)
+                            st.success("解析成功！請檢查下方資料")
+                        else:
+                            st.warning("AI 無法識別有效資料，請重試或手動輸入")
+
+                except Exception as e: st.error(f"解析失敗: {e}")
+
+        # 預覽與存檔區
+        if st.session_state.preview_df is not None:
+            st.markdown("#### 👇 確認匯入資料")
+            edited_new = st.data_editor(st.session_state.preview_df, num_rows="dynamic", use_container_width=True)
+            
+            if st.button("✅ 存入 Google Sheets", type="primary"):
+                # 使用 save_batch_data (它已經改為寫入 GSheet)
+                save_batch_data(edited_new)
+                st.success(f"成功匯入 {len(edited_new)} 筆資料！")
+                st.session_state.preview_df = None
+                time.sleep(1); st.rerun()
+
+    # 3. 主資料庫編輯
+    with t4:
+        st.subheader("📝 完整資料庫編輯")
+        df_main = load_db() # 這會讀取 Daily_Main
+        
+        if df_main.empty:
+            st.warning("⚠️ Daily_Main 目前沒有資料。請確認 Google Sheet 分頁名稱與第一列標題。")
+            st.code("date, wind, part_time_count, worker_strong_count, worker_trend_count, worker_strong_list, worker_trend_list, boss_pullback_list, boss_bargain_list, top_revenue_list, last_updated, manual_turnover")
+        else:
+            ed_main = st.data_editor(df_main, num_rows="dynamic", use_container_width=True, height=500)
+            if st.button("💾 儲存主資料庫變更"):
+                ok, m = save_data_to_gsheet(ed_main, "Daily_Main")
+                if ok: st.success(m); time.sleep(1); st.rerun()
+                else: st.error(m)
 
 # --- 7. 主導航 ---
 def main():
@@ -2799,6 +2921,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
