@@ -359,7 +359,7 @@ def prefetch_turnover_data(stock_list_str, target_date, manual_override_json=Non
         end_str = end_dt.strftime("%Y-%m-%d")
         
         # 使用 threads=True 加速
-        data = yf.download(tickers, start=start_str, end=end_str, group_by='ticker', progress=False, threads=True)
+        data = yf.download(tickers, start=start_str, end=end_str, group_by='ticker', progress=False, threads=False)
         
         for code, name in code_map.items():
             found_val = 0
@@ -1804,7 +1804,7 @@ def get_monthly_avg_turnover(stock_names, month_str):
 
     # 3. 批次下載歷史資料 (加速)
     try:
-        data = yf.download(tickers, start=start_date, end=end_date, group_by='ticker', progress=False, threads=True)
+        data = yf.download(tickers, start=start_date, end=end_date, group_by='ticker', progress=False, threads=False)
         result = {}
         
         for code, name in code_map.items():
@@ -2880,6 +2880,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
