@@ -2724,16 +2724,6 @@ def show_dashboard():
 # --- 6. 頁面視圖：管理後台 (後台) ---
 # --- 6. 頁面視圖：管理後台 (後台) [功能增強版] ---
 def show_admin_panel():
-    st.title("⚙️ 資料管理後台")
-    if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
-    
-    # 建立頁籤以分類管理功能
-    tab_history_tpex, tab_history_taiex, tab_daily_upload, tab_db_edit = st.tabs([
-        "📈 櫃買歷史檔 (TPEx)", 
-        "📊 加權歷史檔 (TAIEX)", 
-        "📥 新增每日資料", 
-        "📝 編輯資料庫"
-    ])def show_admin_panel():
     st.title("⚙️ 資料管理後台 (Google Sheets 連動版)")
     
     # 建立頁籤
@@ -2809,6 +2799,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
