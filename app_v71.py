@@ -15,6 +15,67 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
 
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# --- Google Sheets 連線設定 ---
+def get_gsheet_connection():
+    # 定義需要的權限範圍
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    
+    # 從 Streamlit Secrets 讀取憑證
+    # 注意：Secrets 裡面的 key 必須對應你的設定，這裡假設是 [gcp_service_account]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
+    client = gspread.authorize(creds)
+    return client
+
+# --- 通用讀取函式 (取代 load_history_data) ---
+@st.cache_data(ttl=60) # 設定 60 秒快取，避免頻繁呼叫 API
+def load_data_from_gsheet(worksheet_name):
+    try:
+        client = get_gsheet_connection()
+        sheet = client.open(st.secrets["sheet_name"]) # 讀取設定檔中的試算表名稱
+        ws = sheet.worksheet(worksheet_name)
+        
+        # 讀取所有資料並轉為 DataFrame
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # 資料清洗：確保日期格式正確
+        if '日期' in df.columns:
+            df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
+            df = df.dropna(subset=['日期']).sort_values('日期')
+            
+        return df
+    except Exception as e:
+        print(f"GSheet Load Error ({worksheet_name}): {e}")
+        return pd.DataFrame() # 失敗回傳空表
+
+# --- 通用寫入函式 (取代 save_batch_data / to_csv) ---
+def save_data_to_gsheet(df, worksheet_name):
+    try:
+        client = get_gsheet_connection()
+        sheet = client.open(st.secrets["sheet_name"])
+        ws = sheet.worksheet(worksheet_name)
+        
+        # 1. 處理 DataFrame: 日期轉字串，NaN 轉空字串
+        df_save = df.copy()
+        if '日期' in df_save.columns:
+            df_save['日期'] = df_save['日期'].dt.strftime('%Y-%m-%d')
+        df_save = df_save.fillna('')
+        
+        # 2. 清空工作表並寫入新資料
+        ws.clear()
+        # gspread 需要 list of lists 格式，且包含標題
+        data_to_upload = [df_save.columns.values.tolist()] + df_save.values.tolist()
+        ws.update(data_to_upload)
+        
+        # 清除讀取快取，確保下次讀到最新的
+        load_data_from_gsheet.clear()
+        return True, "✅ 資料已同步至 Google Sheets！"
+    except Exception as e:
+        return False, f"❌ 寫入失敗: {e}"
+		
 # 修正 Pydantic 錯誤
 try:
     from typing_extensions import TypedDict
@@ -1264,30 +1325,31 @@ def render_stock_tags_v113(stock_str, turnover_map):
         else: html += f"<div class='stock-tag'>{clean_s}{t_str}</div>"
     return html
 
+# --- 修改後的 load_db: 改從 Google Sheet 讀取 ---
 def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            df = pd.read_csv(DB_FILE, encoding='utf-8-sig')
+    # 直接呼叫我們之前寫好的通用 GSheet 讀取函式
+    # 記得分頁名稱要跟您在 Google Sheet 裡設定的一樣 ("Daily_Main")
+    df = load_data_from_gsheet("Daily_Main")
+    
+    if not df.empty:
+        # 1. 確保日期欄位是字串格式 (YYYY-MM-DD)
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
-            # 處理數字欄位
-            numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-            
-            # V150 Fix: 即使 CSV 檔沒有 'manual_turnover' 欄位 (雲端舊檔)，也強制在記憶體中建立
-            if 'manual_turnover' not in df.columns:
-                df['manual_turnover'] = ""
-            
-            # V150 Fix: 強制轉型，避免編輯器報錯
-            df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
-                
-            if 'date' in df.columns:
-                df['date'] = df['date'].astype(str)
-                return df.sort_values('date', ascending=False)
-        except Exception as e:
-            print(f"Load DB Error: {e}")
-            return pd.DataFrame()
+        # 2. 確保數值欄位是整數 (防呆)
+        numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+        # 3. 確保手動成交值欄位存在且為字串
+        if 'manual_turnover' not in df.columns:
+            df['manual_turnover'] = ""
+        df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
+
+        # 4. 依照日期排序 (新到舊)
+        return df.sort_values('date', ascending=False)
+        
     return pd.DataFrame()
 
 # V158: 新增歷史資料讀取函數
@@ -1306,36 +1368,72 @@ def load_history_data(file_path=HISTORY_FILE_TPEX):
             print(f"Load History Error ({file_path}): {e}")
     return pd.DataFrame()
 
+# --- 修改後的 save_batch_data: 寫入 Google Sheet ---
 def save_batch_data(records_list):
-    df = load_db()
-    if os.path.exists(DB_FILE):
-        try: shutil.copy(DB_FILE, BACKUP_FILE)
-        except: pass
-    if isinstance(records_list, list): new_data = pd.DataFrame(records_list)
-    else: new_data = records_list
+    # 1. 先讀取目前雲端上的最新資料
+    current_df = load_db()
+    
+    # 2. 準備要寫入的新資料
+    if isinstance(records_list, list): 
+        new_data = pd.DataFrame(records_list)
+    else: 
+        new_data = records_list
     
     if not new_data.empty:
-        new_data['date'] = new_data['date'].astype(str)
-        # V143: 新資料也要確保有欄位
+        new_data['date'] = pd.to_datetime(new_data['date'], errors='coerce').dt.strftime('%Y-%m-%d')
         if 'manual_turnover' not in new_data.columns:
             new_data['manual_turnover'] = ""
             
-        if not df.empty:
-            df = df[~df['date'].isin(new_data['date'])]
-            df = pd.concat([df, new_data], ignore_index=True)
-        else: df = new_data
-    df = df.sort_values('date', ascending=False)
-    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-    return df
+        # 3. 合併邏輯 (Merge)
+        if not current_df.empty:
+            # 移除舊資料中，日期與新資料重複的部分 (避免重複)
+            current_df = current_df[~current_df['date'].isin(new_data['date'])]
+            # 合併
+            final_df = pd.concat([current_df, new_data], ignore_index=True)
+        else: 
+            final_df = new_data
+            
+        # 4. 排序 (新到舊)
+        final_df = final_df.sort_values('date', ascending=False)
+        
+        # 5. 寫入 Google Sheet
+        # 使用我們之前寫好的通用寫入函式
+        ok, msg = save_data_to_gsheet(final_df, "Daily_Main")
+        
+        if not ok:
+            st.error(msg)
+            
+        return final_df
+        
+    return current_df
 
+# --- 修改後的 save_full_history: 寫入 Google Sheet ---
 def save_full_history(df_to_save):
     if not df_to_save.empty:
-        df_to_save['date'] = df_to_save['date'].astype(str)
+        # 格式整理
+        df_to_save['date'] = pd.to_datetime(df_to_save['date'], errors='coerce').dt.strftime('%Y-%m-%d')
         df_to_save = df_to_save.sort_values('date', ascending=False)
-        df_to_save.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+        
+        # 直接覆蓋寫入
+        ok, msg = save_data_to_gsheet(df_to_save, "Daily_Main")
+        if not ok:
+            st.error(msg)
 
+# --- 修改後的 clear_db: 清空 Google Sheet ---
 def clear_db():
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    try:
+        client = get_gsheet_connection()
+        sheet = client.open(st.secrets["sheet_name"])
+        ws = sheet.worksheet("Daily_Main")
+        ws.clear()
+        # 建議保留標題列，避免下次讀取報錯，所以清空後寫回標題
+        headers = ['date', 'wind', 'part_time_count', 'worker_strong_count', 'worker_trend_count', 
+                   'worker_strong_list', 'worker_trend_list', 'boss_pullback_list', 
+                   'boss_bargain_list', 'top_revenue_list', 'last_updated', 'manual_turnover']
+        ws.append_row(headers)
+        load_data_from_gsheet.clear() # 清除快取
+    except Exception as e:
+        st.error(f"清空失敗: {e}")
 
 def calculate_wind_streak(df, current_date_str):
     if df.empty: return 0
@@ -2141,7 +2239,7 @@ def show_dashboard():
     # 【關鍵修復】這裡補回了讀取歷史檔並定義 status/streak/bias 的邏輯，解決 NameError
     
     # A. 加權指數 (TAIEX)
-    df_taiex = load_history_data(HISTORY_FILE_TAIEX)
+    df_taiex = load_data_from_gsheet("TAIEX")
     taiex_w_status = "無資料"
     taiex_w_streak = 0
     taiex_w_bias = 0.0
@@ -2159,7 +2257,7 @@ def show_dashboard():
         except: taiex_w_bias = 0.0
 
     # B. 櫃買指數 (TPEx)
-    df_tpex = load_history_data(HISTORY_FILE_TPEX)
+    df_tpex = load_data_from_gsheet("TPEx")
     tpex_w_status = "無資料"
     tpex_w_streak = 0
     tpex_w_bias = 0.0
@@ -2880,6 +2978,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
