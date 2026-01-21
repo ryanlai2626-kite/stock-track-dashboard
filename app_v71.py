@@ -1350,49 +1350,36 @@ def render_stock_tags_v113(stock_str, turnover_map):
 
 # --- 修改後的 load_db: 改從 Google Sheet 讀取 ---
 def load_db():
-    # 直接呼叫我們之前寫好的通用 GSheet 讀取函式
-    # 記得分頁名稱要跟您在 Google Sheet 裡設定的一樣 ("Daily_Main")
-    df = load_data_from_gsheet("worksheet_name")
+    # 1. 定義要讀取的分頁名稱
+    target_sheet = "Daily_Main" 
+    
     try:
-        # 1. 測試連線憑證
-        client = get_gsheet_connection()
+        # 呼叫通用讀取函式
+        df = load_data_from_gsheet(target_sheet)
         
-        # 2. 測試開啟試算表
-        # 顯示正在嘗試開啟的名稱，方便除錯
-        target_sheet = st.secrets["sheet_name"]
-        sheet = client.open(target_sheet)
-        
-        # 3. 測試開啟分頁
-        ws = sheet.worksheet(worksheet_name)
-        
-        # 4. 讀取資料
-        data = ws.get_all_records()
-        
-        # 5. 如果抓下來是空的，顯示警告
-        if not data:
-            st.warning(f"⚠️ 成功連上 {worksheet_name}，但 Google 回傳資料為空。請檢查該分頁第一列是否有欄位名稱。")
-            return pd.DataFrame()
+        if not df.empty:
+            # 資料處理邏輯...
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
-        df = pd.DataFrame(data)
-        
-        # 資料處理 (維持原樣)
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
-            df = df.sort_values('date', ascending=False)
-        elif '日期' in df.columns:
-            df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
-            df = df.dropna(subset=['日期']).sort_values('日期')
+            # 確保數值欄位正確
+            numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             
-        return df
-        
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"❌ 找不到試算表！請確認 Secrets 裡的 sheet_name = '{st.secrets.get('sheet_name')}' 是否跟 Google Drive 檔名完全一致。")
+            if 'manual_turnover' not in df.columns:
+                df['manual_turnover'] = ""
+            df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
+
+            return df.sort_values('date', ascending=False)
+            
         return pd.DataFrame()
-    except gspread.exceptions.WorksheetNotFound:
-        st.error(f"❌ 找不到分頁 '{worksheet_name}'！請確認 Google Sheet 下方的分頁名稱是否完全一樣 (注意大小寫)。")
-        return pd.DataFrame()
+
     except Exception as e:
-        st.error(f"❌ 發生未預期的錯誤 ({worksheet_name}): {e}")
+        # 這裡原本寫 worksheet_name 會報錯，因為 load_db 裡面沒有這個變數
+        # 修正：直接寫死名稱或用上面定義的 target_sheet
+        st.error(f"❌ 讀取主資料庫失敗 ({target_sheet}): {e}")
         return pd.DataFrame()
 
 # V158: 新增歷史資料讀取函數
@@ -2964,6 +2951,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
