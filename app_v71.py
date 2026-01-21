@@ -2763,40 +2763,64 @@ def show_admin_panel():
     t1, t2, t3, t4 = st.tabs(["📈 櫃買歷史", "📊 加權歷史", "📥 新增每日資料", "📝 主資料庫編輯"])
     
     # === 子功能：自動更新歷史股價 ===
-    def auto_update_index_history(df, ticker_symbol):
-        try:
-            stock = yf.Ticker(ticker_symbol)
-            hist = stock.history(period="3mo")
-            if hist.empty: return df, "❌ 無法取得 Yahoo 報價"
-            
-            last = hist.iloc[-1]
-            d_str = last.name.strftime('%Y-%m-%d')
-            close = float(last['Close'])
-            ma20 = hist['Close'].rolling(20).mean().iloc[-1]
-            bias = (close - ma20) / ma20 * 100
-            
-            # 檢查日期是否重複
-            # 注意：從 Google Sheet 讀下來的日期通常是字串
-            current_dates = df['日期'].astype(str).values if '日期' in df.columns else []
-            if d_str in current_dates: 
-                return df, f"⚠️ {d_str} 資料已存在，無需更新。"
-            
-            # 自動判斷風度
-            wind = "無風"
-            if bias > 2: wind = "強風"
-            elif bias > 0.5: wind = "亂流"
-            elif bias < -2: wind = "陣風"
-            
-            new_row = pd.DataFrame([{"日期": d_str, "收": round(close, 2), "風度": wind, "20MA": round(ma20, 2), "乖離率": f"{bias:.2f}%"}])
-            df = pd.concat([df, new_row], ignore_index=True)
-            
-            # 排序
-            if '日期' in df.columns:
-                df['dt_temp'] = pd.to_datetime(df['日期'])
-                df = df.sort_values('dt_temp').drop(columns=['dt_temp'])
-            
-            return df, f"✅ 已新增 {d_str}: {wind} (乖離 {bias:.2f}%)"
-        except Exception as e: return df, f"❌ 更新錯誤: {e}"
+# === [防封鎖版] 子功能：自動更新歷史股價 ===
+def auto_update_index_history(df, ticker_symbol):
+    try:
+        # 1. 偽裝成瀏覽器 (關鍵修改！)
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+
+        # 2. 使用 session 請求 yfinance
+        stock = yf.Ticker(ticker_symbol, session=session)
+        
+        # 3. 嘗試抓取資料 (加入重試機制)
+        hist = pd.DataFrame()
+        for i in range(3): # 最多試 3 次
+            try:
+                hist = stock.history(period="3mo")
+                if not hist.empty: break
+                time.sleep(1) # 休息一下再試
+            except: 
+                time.sleep(2)
+        
+        if hist.empty: return df, "❌ 無法取得 Yahoo 報價 (Rate Limit)，請稍後再試。"
+        
+        # --- 以下邏輯保持不變 ---
+        last = hist.iloc[-1]
+        d_str = last.name.strftime('%Y-%m-%d')
+        close = float(last['Close'])
+        ma20 = hist['Close'].rolling(20).mean().iloc[-1]
+        
+        # 確保 MA20 有值
+        if pd.isna(ma20): ma20 = close 
+        
+        bias = (close - ma20) / ma20 * 100
+        
+        # 檢查日期是否重複
+        current_dates = df['日期'].astype(str).values if '日期' in df.columns else []
+        if d_str in current_dates: 
+            return df, f"⚠️ {d_str} 資料已存在，無需更新。"
+        
+        # 自動判斷風度
+        wind = "無風"
+        if bias > 2: wind = "強風"
+        elif bias > 0.5: wind = "亂流"
+        elif bias < -2: wind = "陣風"
+        
+        new_row = pd.DataFrame([{"日期": d_str, "收": round(close, 2), "風度": wind, "20MA": round(ma20, 2), "乖離率": f"{bias:.2f}%"}])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # 排序
+        if '日期' in df.columns:
+            df['dt_temp'] = pd.to_datetime(df['日期'])
+            df = df.sort_values('dt_temp').drop(columns=['dt_temp'])
+        
+        return df, f"✅ 已新增 {d_str}: {wind} (乖離 {bias:.2f}%)"
+
+    except Exception as e: 
+        return df, f"❌ 更新錯誤: {str(e)}"
 
     # === 子功能：渲染歷史資料管理介面 ===
     def render_history_manager(tab, sheet_name, ticker):
@@ -2951,6 +2975,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
