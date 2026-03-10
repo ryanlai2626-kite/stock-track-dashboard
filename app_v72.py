@@ -15,6 +15,90 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
 
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# --- Google Sheets 連線設定 ---
+def get_gsheet_connection():
+    # 定義需要的權限範圍
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    
+    # 從 Streamlit Secrets 讀取憑證
+    # 注意：Secrets 裡面的 key 必須對應你的設定，這裡假設是 [gcp_service_account]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
+    client = gspread.authorize(creds)
+    return client
+
+# --- 通用讀取函式 (取代 load_history_data) ---
+@st.cache_data(ttl=60) # 設定 60 秒快取，避免頻繁呼叫 API
+def load_data_from_gsheet(worksheet_name):
+    try:
+        # 1. 測試連線憑證
+        client = get_gsheet_connection()
+        
+        # 2. 測試開啟試算表
+        # 顯示正在嘗試開啟的名稱，方便除錯
+        target_sheet = st.secrets["sheet_name"]
+        sheet = client.open(target_sheet)
+        
+        # 3. 測試開啟分頁
+        ws = sheet.worksheet(worksheet_name)
+        
+        # 4. 讀取資料
+        data = ws.get_all_records()
+        
+        # 5. 如果抓下來是空的，顯示警告
+        if not data:
+            st.warning(f"⚠️ 成功連上 {worksheet_name}，但 Google 回傳資料為空。請檢查該分頁第一列是否有欄位名稱。")
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(data)
+        
+        # 資料處理 (維持原樣)
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            df = df.sort_values('date', ascending=False)
+        elif '日期' in df.columns:
+            df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
+            df = df.dropna(subset=['日期']).sort_values('日期')
+            
+        return df
+        
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"❌ 找不到試算表！請確認 Secrets 裡的 sheet_name = '{st.secrets.get('sheet_name')}' 是否跟 Google Drive 檔名完全一致。")
+        return pd.DataFrame()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"❌ 找不到分頁 '{worksheet_name}'！請確認 Google Sheet 下方的分頁名稱是否完全一樣 (注意大小寫)。")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"❌ 發生未預期的錯誤 ({worksheet_name}): {e}")
+        return pd.DataFrame()
+
+# --- 通用寫入函式 (取代 save_batch_data / to_csv) ---
+def save_data_to_gsheet(df, worksheet_name):
+    try:
+        client = get_gsheet_connection()
+        sheet = client.open(st.secrets["sheet_name"])
+        ws = sheet.worksheet(worksheet_name)
+        
+        # 1. 處理 DataFrame: 日期轉字串，NaN 轉空字串
+        df_save = df.copy()
+        if '日期' in df_save.columns:
+            df_save['日期'] = df_save['日期'].dt.strftime('%Y-%m-%d')
+        df_save = df_save.fillna('')
+        
+        # 2. 清空工作表並寫入新資料
+        ws.clear()
+        # gspread 需要 list of lists 格式，且包含標題
+        data_to_upload = [df_save.columns.values.tolist()] + df_save.values.tolist()
+        ws.update(data_to_upload)
+        
+        # 清除讀取快取，確保下次讀到最新的
+        load_data_from_gsheet.clear()
+        return True, "✅ 資料已同步至 Google Sheets！"
+    except Exception as e:
+        return False, f"❌ 寫入失敗: {e}"
+		
 # 修正 Pydantic 錯誤
 try:
     from typing_extensions import TypedDict
@@ -195,6 +279,14 @@ MASTER_STOCK_DB = {
 	"4772": ("台特化", "特化材料"),"3305": ("昇貿", "PCB材料設備"),
 	"3533": ("嘉澤", "電子上游,連接器元件"),"8131": ("福懋科", "電子上游,IC封測"),
 	"2618": ("長榮航", "傳產,航運"),"2634": ("漢翔", "傳產,軍工"),
+	"3581": ("博磊", "電子上游,IC封測"),"4541": ("晟田", "傳產,航運"),
+	"6215": ("和椿", "電子中游-儀器設備工程"),"3526": ("凡甲", "電子上游-連接器"),
+	"6217": ("中探針", "電子中游-PCB材料設備"),"5434": ("崇越", "電子上游-半導體元件"),
+	"6944": ("兆聯實業", "傳產-綠能環保"),"6643": ("M31", "電子上游-IP/ASIC"),
+	"6163": ("華電網", "OTC-通信網路業"),"5309": ("系統電", "電子中游-變壓器與UPS"),
+	"2451": ("創見", "電子上游-記憶體銷售"),
+
+
     
     # 權值/熱門 (上市)
     "2330": ("台積電", "晶圓代工"), "2317": ("鴻海", "AI伺服器組裝代工"), "2454": ("聯發科", "IC設計"), 
@@ -1264,31 +1356,39 @@ def render_stock_tags_v113(stock_str, turnover_map):
         else: html += f"<div class='stock-tag'>{clean_s}{t_str}</div>"
     return html
 
+# --- 修改後的 load_db: 改從 Google Sheet 讀取 ---
 def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            df = pd.read_csv(DB_FILE, encoding='utf-8-sig')
+    # 1. 定義要讀取的分頁名稱
+    target_sheet = "Daily_Main" 
+    
+    try:
+        # 呼叫通用讀取函式
+        df = load_data_from_gsheet(target_sheet)
+        
+        if not df.empty:
+            # 資料處理邏輯...
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
-            # 處理數字欄位
+            # 確保數值欄位正確
             numeric_cols = ['part_time_count', 'worker_strong_count', 'worker_trend_count']
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             
-            # V150 Fix: 即使 CSV 檔沒有 'manual_turnover' 欄位 (雲端舊檔)，也強制在記憶體中建立
             if 'manual_turnover' not in df.columns:
                 df['manual_turnover'] = ""
-            
-            # V150 Fix: 強制轉型，避免編輯器報錯
             df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
-                
-            if 'date' in df.columns:
-                df['date'] = df['date'].astype(str)
-                return df.sort_values('date', ascending=False)
-        except Exception as e:
-            print(f"Load DB Error: {e}")
-            return pd.DataFrame()
-    return pd.DataFrame()
+
+            return df.sort_values('date', ascending=False)
+            
+        return pd.DataFrame()
+
+    except Exception as e:
+        # 這裡原本寫 worksheet_name 會報錯，因為 load_db 裡面沒有這個變數
+        # 修正：直接寫死名稱或用上面定義的 target_sheet
+        st.error(f"❌ 讀取主資料庫失敗 ({target_sheet}): {e}")
+        return pd.DataFrame()
 
 # V158: 新增歷史資料讀取函數
 # --- 【修改】加入 file_path 參數，預設為櫃買 ---
@@ -1306,36 +1406,72 @@ def load_history_data(file_path=HISTORY_FILE_TPEX):
             print(f"Load History Error ({file_path}): {e}")
     return pd.DataFrame()
 
+# --- 修改後的 save_batch_data: 寫入 Google Sheet ---
 def save_batch_data(records_list):
-    df = load_db()
-    if os.path.exists(DB_FILE):
-        try: shutil.copy(DB_FILE, BACKUP_FILE)
-        except: pass
-    if isinstance(records_list, list): new_data = pd.DataFrame(records_list)
-    else: new_data = records_list
+    # 1. 先讀取目前雲端上的最新資料
+    current_df = load_db()
+    
+    # 2. 準備要寫入的新資料
+    if isinstance(records_list, list): 
+        new_data = pd.DataFrame(records_list)
+    else: 
+        new_data = records_list
     
     if not new_data.empty:
-        new_data['date'] = new_data['date'].astype(str)
-        # V143: 新資料也要確保有欄位
+        new_data['date'] = pd.to_datetime(new_data['date'], errors='coerce').dt.strftime('%Y-%m-%d')
         if 'manual_turnover' not in new_data.columns:
             new_data['manual_turnover'] = ""
             
-        if not df.empty:
-            df = df[~df['date'].isin(new_data['date'])]
-            df = pd.concat([df, new_data], ignore_index=True)
-        else: df = new_data
-    df = df.sort_values('date', ascending=False)
-    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-    return df
+        # 3. 合併邏輯 (Merge)
+        if not current_df.empty:
+            # 移除舊資料中，日期與新資料重複的部分 (避免重複)
+            current_df = current_df[~current_df['date'].isin(new_data['date'])]
+            # 合併
+            final_df = pd.concat([current_df, new_data], ignore_index=True)
+        else: 
+            final_df = new_data
+            
+        # 4. 排序 (新到舊)
+        final_df = final_df.sort_values('date', ascending=False)
+        
+        # 5. 寫入 Google Sheet
+        # 使用我們之前寫好的通用寫入函式
+        ok, msg = save_data_to_gsheet(final_df, "Daily_Main")
+        
+        if not ok:
+            st.error(msg)
+            
+        return final_df
+        
+    return current_df
 
+# --- 修改後的 save_full_history: 寫入 Google Sheet ---
 def save_full_history(df_to_save):
     if not df_to_save.empty:
-        df_to_save['date'] = df_to_save['date'].astype(str)
+        # 格式整理
+        df_to_save['date'] = pd.to_datetime(df_to_save['date'], errors='coerce').dt.strftime('%Y-%m-%d')
         df_to_save = df_to_save.sort_values('date', ascending=False)
-        df_to_save.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+        
+        # 直接覆蓋寫入
+        ok, msg = save_data_to_gsheet(df_to_save, "Daily_Main")
+        if not ok:
+            st.error(msg)
 
+# --- 修改後的 clear_db: 清空 Google Sheet ---
 def clear_db():
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    try:
+        client = get_gsheet_connection()
+        sheet = client.open(st.secrets["sheet_name"])
+        ws = sheet.worksheet("Daily_Main")
+        ws.clear()
+        # 建議保留標題列，避免下次讀取報錯，所以清空後寫回標題
+        headers = ['date', 'wind', 'part_time_count', 'worker_strong_count', 'worker_trend_count', 
+                   'worker_strong_list', 'worker_trend_list', 'boss_pullback_list', 
+                   'boss_bargain_list', 'top_revenue_list', 'last_updated', 'manual_turnover']
+        ws.append_row(headers)
+        load_data_from_gsheet.clear() # 清除快取
+    except Exception as e:
+        st.error(f"清空失敗: {e}")
 
 def calculate_wind_streak(df, current_date_str):
     if df.empty: return 0
@@ -2141,7 +2277,7 @@ def show_dashboard():
     # 【關鍵修復】這裡補回了讀取歷史檔並定義 status/streak/bias 的邏輯，解決 NameError
     
     # A. 加權指數 (TAIEX)
-    df_taiex = load_history_data(HISTORY_FILE_TAIEX)
+    df_taiex = load_data_from_gsheet("TAIEX")
     taiex_w_status = "無資料"
     taiex_w_streak = 0
     taiex_w_bias = 0.0
@@ -2159,7 +2295,7 @@ def show_dashboard():
         except: taiex_w_bias = 0.0
 
     # B. 櫃買指數 (TPEx)
-    df_tpex = load_history_data(HISTORY_FILE_TPEX)
+    df_tpex = load_data_from_gsheet("TPEx")
     tpex_w_status = "無資料"
     tpex_w_streak = 0
     tpex_w_bias = 0.0
@@ -2624,243 +2760,210 @@ def show_dashboard():
             st.markdown('<a href="https://service-82255878134.us-west1.run.app/"  target="_blank" class="link-btn">Ding-風箏策略儀表板</a>', unsafe_allow_html=True)
 
 # --- 6. 頁面視圖：管理後台 (後台) ---
-# --- 6. 頁面視圖：管理後台 (後台) [功能增強版] ---
+# --- 6. 頁面: 管理後台 (Google Sheets 完整修復版) ---
 def show_admin_panel():
-    st.title("⚙️ 資料管理後台")
-    if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
+    st.title("⚙️ 資料管理後台 (Google Sheets)")
     
-    # 建立頁籤以分類管理功能
-    tab_history_tpex, tab_history_taiex, tab_daily_upload, tab_db_edit = st.tabs([
-        "📈 櫃買歷史檔 (TPEx)", 
-        "📊 加權歷史檔 (TAIEX)", 
-        "📥 新增每日資料", 
-        "📝 編輯資料庫"
-    ])
+    # 檢查 API Key
+    if not GOOGLE_API_KEY: st.error("❌ 未設定 API Key"); return
 
-    # ==========================================
-    # Tab 1: 櫃買歷史檔 (TPEx) 管理
-    # ==========================================
-    with tab_history_tpex:
-        st.subheader("📂 櫃買指數 (TPEx) 風度歷史")
+    # 定義四個分頁
+    t1, t2, t3, t4 = st.tabs(["📈 櫃買歷史", "📊 加權歷史", "📥 新增每日資料", "📝 主資料庫編輯"])
+    
+    # === 子功能：自動更新歷史股價 ===
+# === [防封鎖版] 子功能：自動更新歷史股價 ===
+def auto_update_index_history(df, ticker_symbol):
+    try:
+        # 1. 偽裝成瀏覽器 (關鍵修改！)
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+
+        # 2. 使用 session 請求 yfinance
+        stock = yf.Ticker(ticker_symbol, session=session)
         
-        # 1. 上傳區
-        history_file = st.file_uploader("上傳/更新 kite_history.csv", type=["csv"], key="tpex_uploader")
-        if history_file is not None:
+        # 3. 嘗試抓取資料 (加入重試機制)
+        hist = pd.DataFrame()
+        for i in range(3): # 最多試 3 次
             try:
-                temp_df = pd.read_csv(history_file) # 嘗試直接讀取
-                # 簡單檢查
-                if '日期' in temp_df.columns:
-                    temp_df.to_csv(HISTORY_FILE_TPEX, index=False, encoding='utf-8-sig')
-                    st.success(f"✅ 檔案已更新！({len(temp_df)} 筆)")
-                    time.sleep(1); st.rerun()
-                else: st.error("❌ 格式錯誤：缺少 '日期' 欄位")
-            except Exception as e: st.error(f"讀取失敗: {e}")
-
-        # 2. [修改 4] 線上編輯與篩選區
-        if os.path.exists(HISTORY_FILE_TPEX):
-            st.markdown("---")
-            st.markdown("#### 🛠️ 線上編輯與預覽")
-            try:
-                curr_tpex_df = pd.read_csv(HISTORY_FILE_TPEX)
-                # 顯示編輯器 (num_rows="dynamic" 允許新增刪除列)
-                edited_tpex = st.data_editor(
-                    curr_tpex_df, 
-                    use_container_width=True, 
-                    num_rows="dynamic",
-                    height=400,
-                    key="editor_tpex"
-                )
-                
-                if st.button("💾 儲存 [櫃買] 變更", key="save_tpex"):
-                    edited_tpex.to_csv(HISTORY_FILE_TPEX, index=False, encoding='utf-8-sig')
-                    st.success("✅ 櫃買歷史檔已儲存！")
-            except Exception as e:
-                st.error(f"載入失敗: {e}")
-        else:
-            st.info("尚無櫃買歷史檔案。")
-
-    # ==========================================
-    # Tab 2: 加權歷史檔 (TAIEX) 管理
-    # ==========================================
-    with tab_history_taiex:
-        st.subheader("📂 加權指數 (TAIEX) 風度歷史")
+                hist = stock.history(period="3mo")
+                if not hist.empty: break
+                time.sleep(1) # 休息一下再試
+            except: 
+                time.sleep(2)
         
-        # 1. 上傳區
-        taiex_file = st.file_uploader("上傳/更新 kite_history_taiex.csv", type=["csv"], key="taiex_uploader")
-        if taiex_file is not None:
-            try:
-                temp_df = pd.read_csv(taiex_file)
-                if '日期' in temp_df.columns:
-                    temp_df.to_csv(HISTORY_FILE_TAIEX, index=False, encoding='utf-8-sig')
-                    st.success(f"✅ 檔案已更新！({len(temp_df)} 筆)")
-                    time.sleep(1); st.rerun()
-                else: st.error("❌ 格式錯誤：缺少 '日期' 欄位")
-            except Exception as e: st.error(f"讀取失敗: {e}")
-
-        # 2. [修改 4] 線上編輯與篩選區
-        if os.path.exists(HISTORY_FILE_TAIEX):
-            st.markdown("---")
-            st.markdown("#### 🛠️ 線上編輯與預覽")
-            try:
-                curr_taiex_df = pd.read_csv(HISTORY_FILE_TAIEX)
-                edited_taiex = st.data_editor(
-                    curr_taiex_df, 
-                    use_container_width=True, 
-                    num_rows="dynamic",
-                    height=400,
-                    key="editor_taiex"
-                )
-                
-                if st.button("💾 儲存 [加權] 變更", key="save_taiex"):
-                    edited_taiex.to_csv(HISTORY_FILE_TAIEX, index=False, encoding='utf-8-sig')
-                    st.success("✅ 加權歷史檔已儲存！")
-            except Exception as e:
-                st.error(f"載入失敗: {e}")
-        else:
-            st.info("尚無加權歷史檔案。")
-
-    # ==========================================
-    # Tab 3: 新增每日資料 (截圖 OR CSV)
-    # ==========================================
-    with tab_daily_upload:
-        st.subheader("📥 新增/更新每日戰情資料")
+        if hist.empty: return df, "❌ 無法取得 Yahoo 報價 (Rate Limit)，請稍後再試。"
         
-        # [修改 3] 增加資料來源切換
-        input_method = st.radio("選擇輸入方式", ["📸 截圖 AI 解析", "📂 上傳每日資料 CSV"], horizontal=True)
+        # --- 以下邏輯保持不變 ---
+        last = hist.iloc[-1]
+        d_str = last.name.strftime('%Y-%m-%d')
+        close = float(last['Close'])
+        ma20 = hist['Close'].rolling(20).mean().iloc[-1]
         
+        # 確保 MA20 有值
+        if pd.isna(ma20): ma20 = close 
+        
+        bias = (close - ma20) / ma20 * 100
+        
+        # 檢查日期是否重複
+        current_dates = df['日期'].astype(str).values if '日期' in df.columns else []
+        if d_str in current_dates: 
+            return df, f"⚠️ {d_str} 資料已存在，無需更新。"
+        
+        # 自動判斷風度
+        wind = "無風"
+        if bias > 2: wind = "強風"
+        elif bias > 0.5: wind = "亂流"
+        elif bias < -2: wind = "陣風"
+        
+        new_row = pd.DataFrame([{"日期": d_str, "收": round(close, 2), "風度": wind, "20MA": round(ma20, 2), "乖離率": f"{bias:.2f}%"}])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # 排序
+        if '日期' in df.columns:
+            df['dt_temp'] = pd.to_datetime(df['日期'])
+            df = df.sort_values('dt_temp').drop(columns=['dt_temp'])
+        
+        return df, f"✅ 已新增 {d_str}: {wind} (乖離 {bias:.2f}%)"
+
+    except Exception as e: 
+        return df, f"❌ 更新錯誤: {str(e)}"
+
+    # === 子功能：渲染歷史資料管理介面 ===
+    def render_history_manager(tab, sheet_name, ticker):
+        with tab:
+            st.subheader(f"📂 {sheet_name} 歷史資料")
+            df = load_data_from_gsheet(sheet_name)
+            
+            # 若讀取失敗或為空，提示初始化
+            if df.empty:
+                st.warning(f"⚠️ {sheet_name} 目前沒有資料或讀取失敗。")
+                st.info("💡 請確認：\n1. Google Sheet 是否已共用給機器人 Email？\n2. 該分頁的第一列是否已填入欄位名稱？(日期, 收, 風度, 20MA, 乖離率)")
+                if st.button(f"🔄 我已設定好，重新讀取 {sheet_name}"):
+                    load_data_from_gsheet.clear()
+                    st.rerun()
+                return
+
+            # 自動更新按鈕
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                if st.button(f"⚡ 自動抓取今日數據", key=f"btn_{sheet_name}"):
+                    new_df, msg = auto_update_index_history(df, ticker)
+                    if "✅" in msg:
+                        save_data_to_gsheet(new_df, sheet_name)
+                        st.success(msg); time.sleep(1); st.rerun()
+                    else: st.warning(msg)
+            
+            # 編輯器
+            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key=f"ed_{sheet_name}", height=350)
+            
+            # 儲存按鈕
+            if st.button(f"💾 儲存 {sheet_name} 變更", key=f"sv_{sheet_name}"):
+                ok, m = save_data_to_gsheet(edited, sheet_name)
+                if ok: st.success(m); time.sleep(1); st.rerun()
+                else: st.error(m)
+
+    # 1. 渲染櫃買與加權
+    render_history_manager(t1, "TPEx", "^TWOII")
+    render_history_manager(t2, "TAIEX", "^TWII")
+    
+    # 2. 每日資料上傳 (AI 解析)
+    with t3:
+        st.subheader("📥 新增每日戰情資料")
+        
+        # 初始化預覽 session
         if 'preview_df' not in st.session_state: st.session_state.preview_df = None
 
-        if input_method == "📸 截圖 AI 解析":
-            uploaded_file = st.file_uploader("上傳每日截圖", type=["png", "jpg", "jpeg"])
-            if uploaded_file and st.button("開始 AI 解析", type="primary"):
-                with st.spinner("🤖 AI 正在分析圖片中..."):
-                    img = Image.open(uploaded_file)
-                    try:
-                        json_text = ai_analyze_v86(img)
-                        # ... (保留原有的 AI 解析與錯誤處理邏輯) ...
-                        if "error" in json_text and len(json_text) < 100: st.error(f"API 錯誤: {json_text}")
-                        else:
-                            raw_data = json.loads(json_text)
-                            # ... (簡化代碼，請保留您原本的 find_valid_records 和資料轉換邏輯) ...
-                            # 為了節省篇幅，這裡假設 raw_data 已經被正確解析
-                            # 請將原本 show_admin_panel 中處理 raw_data -> processed_list 的代碼複製過來
-                            # -----------------------------------------------------
-                            # (以下為原代碼邏輯復刻)
-                            if isinstance(raw_data, dict) and "error" in raw_data:
-                                st.error(f"API Error: {raw_data['error']}")
-                            else:
-                                def find_valid_records(data):
-                                    found = []
-                                    if isinstance(data, list):
-                                        for item in data: found.extend(find_valid_records(item))
-                                    elif isinstance(data, dict):
-                                        if "col_01" in data: found.append(data)
-                                        else:
-                                            for val in data.values(): found.extend(find_valid_records(val))
-                                    return found
-                                
-                                raw_data = find_valid_records(raw_data)
-                                processed_list = []
-                                for item in raw_data:
-                                    if not isinstance(item, dict): continue
-                                    def get_col_stocks(start, end):
-                                        res = []; seen = set()
-                                        for i in range(start, end + 1):
-                                            val = item.get(f"col_{i:02d}")
-                                            if val and str(val).lower() != 'null':
-                                                val_str = str(val).strip()
-                                                if val_str not in seen: res.append(val_str); seen.add(val_str)
-                                        return "、".join(res)
-                                    if not item.get("col_01"): continue
-                                    record = {
-                                        "date": str(item.get("col_01")).replace("/", "-"),
-                                        "wind": item.get("col_02", ""),
-                                        "part_time_count": item.get("col_03", 0),
-                                        "worker_strong_count": item.get("col_04", 0),
-                                        "worker_trend_count": item.get("col_05", 0),
-                                        "worker_strong_list": get_col_stocks(6, 8),
-                                        "worker_trend_list": get_col_stocks(9, 11),
-                                        "boss_pullback_list": get_col_stocks(12, 14),
-                                        "boss_bargain_list": get_col_stocks(15, 17),
-                                        "top_revenue_list": get_col_stocks(18, 23),
-                                        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                        "manual_turnover": ""
-                                    }
-                                    processed_list.append(record)
-                                st.session_state.preview_df = pd.DataFrame(processed_list)
-                            # -----------------------------------------------------
-                    except Exception as e: st.error(f"解析錯誤: {e}")
-
-        else: # 選項：上傳每日資料 CSV
-            daily_csv = st.file_uploader("上傳 CSV (需符合資料庫格式)", type=["csv"])
-            st.info("💡 CSV 格式提示：需包含 date, wind, part_time_count... 等欄位。建議先從「編輯資料庫」下載範本。")
-            
-            if daily_csv is not None:
+        uploaded_file = st.file_uploader("上傳每日截圖", type=["png", "jpg", "jpeg"])
+        
+        if uploaded_file and st.button("🤖 開始 AI 解析", type="primary"):
+            with st.spinner("AI 正在分析圖片..."):
                 try:
-                    csv_df = pd.read_csv(daily_csv)
-                    # 補上必要欄位 (如果 CSV 缺漏)
-                    if 'last_updated' not in csv_df.columns:
-                        csv_df['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    if 'manual_turnover' not in csv_df.columns:
-                        csv_df['manual_turnover'] = ""
-                    
-                    st.session_state.preview_df = csv_df
-                except Exception as e:
-                    st.error(f"CSV 讀取失敗: {e}")
+                    img = Image.open(uploaded_file)
+                    json_text = ai_analyze_v86(img)
+                    if "error" in json_text and len(json_text) < 100: 
+                        st.error(f"API 錯誤: {json_text}")
+                    else:
+                        raw_data = json.loads(json_text)
+                        
+                        # --- 簡化的資料處理邏輯 ---
+                        # (這裡將 JSON 轉為 DataFrame 的邏輯簡化展示，實際運作會用您原本的 find_valid_records)
+                        # 假設解析成功，轉換格式...
+                        processed_list = []
+                        
+                        # 遞迴尋找有效資料
+                        def find_valid_records(data):
+                            found = []
+                            if isinstance(data, list):
+                                for item in data: found.extend(find_valid_records(item))
+                            elif isinstance(data, dict):
+                                if "col_01" in data: found.append(data)
+                                else:
+                                    for val in data.values(): found.extend(find_valid_records(val))
+                            return found
 
-        # 預覽與確認存檔區 (共用)
+                        valid_rows = find_valid_records(raw_data)
+                        
+                        for item in valid_rows:
+                            # 組合股票字串
+                            def get_stocks(start, end):
+                                res = []
+                                for i in range(start, end+1):
+                                    val = item.get(f"col_{i:02d}")
+                                    if val and str(val).lower() != 'null': res.append(str(val).strip())
+                                return "、".join(res)
+
+                            record = {
+                                "date": str(item.get("col_01")).replace("/", "-"),
+                                "wind": item.get("col_02", ""),
+                                "part_time_count": item.get("col_03", 0),
+                                "worker_strong_count": item.get("col_04", 0),
+                                "worker_trend_count": item.get("col_05", 0),
+                                "worker_strong_list": get_stocks(6, 8),
+                                "worker_trend_list": get_stocks(9, 11),
+                                "boss_pullback_list": get_stocks(12, 14),
+                                "boss_bargain_list": get_stocks(15, 17),
+                                "top_revenue_list": get_stocks(18, 23),
+                                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "manual_turnover": ""
+                            }
+                            processed_list.append(record)
+                        
+                        if processed_list:
+                            st.session_state.preview_df = pd.DataFrame(processed_list)
+                            st.success("解析成功！請檢查下方資料")
+                        else:
+                            st.warning("AI 無法識別有效資料，請重試或手動輸入")
+
+                except Exception as e: st.error(f"解析失敗: {e}")
+
+        # 預覽與存檔區
         if st.session_state.preview_df is not None:
             st.markdown("#### 👇 確認匯入資料")
-            st.info("請檢查下方資料，可直接修改。確認無誤後請點擊 **「✅ 存入資料庫」**。")
-            
             edited_new = st.data_editor(st.session_state.preview_df, num_rows="dynamic", use_container_width=True)
             
-            if st.button("✅ 存入資料庫", type="primary"):
+            if st.button("✅ 存入 Google Sheets", type="primary"):
+                # 使用 save_batch_data (它已經改為寫入 GSheet)
                 save_batch_data(edited_new)
                 st.success(f"成功匯入 {len(edited_new)} 筆資料！")
                 st.session_state.preview_df = None
                 time.sleep(1); st.rerun()
 
-    # ==========================================
-    # Tab 4: 編輯資料庫 (主檔)
-    # ==========================================
-    with tab_db_edit:
-        st.subheader("📝 完整歷史資料庫編輯")
-        df = load_db()
-        if not df.empty:
-            st.markdown("在此可修改所有歷史紀錄，包含手動成交值修正。")
-            
-            if 'manual_turnover' in df.columns:
-                df['manual_turnover'] = df['manual_turnover'].astype(str).replace('nan', '')
-            else: df['manual_turnover'] = ""
-
-            col_config = {
-                "manual_turnover": st.column_config.TextColumn("手動成交值 (JSON)", help='格式: {"股票名": 億元}')
-            }
-            
-            try:
-                edited_history = st.data_editor(
-                    df, 
-                    num_rows="dynamic", 
-                    use_container_width=True, 
-                    column_config=col_config,
-                    height=500
-                )
-                
-                col_save, col_clear = st.columns([1, 1])
-                with col_save:
-                    if st.button("💾 儲存主資料庫變更", type="primary"):
-                        save_full_history(edited_history)
-                        st.success("更新成功！")
-                        time.sleep(1); st.rerun()
-                with col_clear:
-                    if st.button("🗑️ 清空資料庫 (慎用)", type="secondary"): 
-                        clear_db()
-                        st.warning("已清空")
-                        st.rerun()
-            except Exception as e:
-                st.error(f"載入失敗: {e}")
-        else: st.info("目前無資料")
+    # 3. 主資料庫編輯
+    with t4:
+        st.subheader("📝 完整資料庫編輯")
+        df_main = load_db() # 這會讀取 Daily_Main
+        
+        if df_main.empty:
+            st.warning("⚠️ Daily_Main 目前沒有資料。請確認 Google Sheet 分頁名稱與第一列標題。")
+            st.code("date, wind, part_time_count, worker_strong_count, worker_trend_count, worker_strong_list, worker_trend_list, boss_pullback_list, boss_bargain_list, top_revenue_list, last_updated, manual_turnover")
+        else:
+            ed_main = st.data_editor(df_main, num_rows="dynamic", use_container_width=True, height=500)
+            if st.button("💾 儲存主資料庫變更"):
+                ok, m = save_data_to_gsheet(ed_main, "Daily_Main")
+                if ok: st.success(m); time.sleep(1); st.rerun()
+                else: st.error(m)
 
 # --- 7. 主導航 ---
 def main():
@@ -2880,7 +2983,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
